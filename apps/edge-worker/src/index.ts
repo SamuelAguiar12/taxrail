@@ -116,6 +116,13 @@ export function createApp(): Hono<{ Bindings: Env }> {
     return c.json(buildOpenApiSpec(c.env, c.req.url));
   });
 
+  const glamaClaimPayload = {
+    $schema: "https://glama.ai/mcp/schemas/connector.json",
+    claim: "glama_claim_Wgag6uWRQ0FnQZtLErg7eKXDH-7Pw6ex",
+  };
+  app.get("/mcp/.well-known/glama.json", (c) => c.json(glamaClaimPayload));
+  app.get("/.well-known/glama.json", (c) => c.json(glamaClaimPayload));
+
   // Live on-chain wallet scan + spot price check (Alchemy + Coinbase fallback)
   app.get("/api/v1/wallet-scan", async (c) => {
     const address = c.req.query("address");
