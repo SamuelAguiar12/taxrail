@@ -1,0 +1,501 @@
+{
+  "displayName": "TaxRail",
+  "name": "taxRail",
+  "icon": "file:taxrail.svg",
+  "group": ["transform"],
+  "version": 1,
+  "subtitle": "={{$parameter[\"operation\"] + \": \" + $parameter[\"jurisdiction\"]}}",
+  "description": "Autonomous Tax-Optimization Rail for AI Agents (US & Brazil) with MCP x402 settlement and 20% affiliate share",
+  "defaults": {
+    "name": "TaxRail"
+  },
+  "inputs": ["main"],
+  "outputs": ["main"],
+  "credentials": [
+    {
+      "name": "taxRailApi",
+      "required": true
+    }
+  ],
+  "requestDefaults": {
+    "baseURL": "={{$credentials.baseUrl || \"https://api.taxrail.online\"}}",
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "X-TaxRail-Referrer": "={{$credentials.referrerWallet || \"\"}}"
+    }
+  },
+  "properties": [
+    {
+      "displayName": "Resource",
+      "name": "resource",
+      "type": "options",
+      "noDataExpression": true,
+      "options": [
+        {
+          "name": "Tax Optimization",
+          "value": "taxOptimization"
+        }
+      ],
+      "default": "taxOptimization"
+    },
+    {
+      "displayName": "Operation",
+      "name": "operation",
+      "type": "options",
+      "noDataExpression": true,
+      "displayOptions": {
+        "show": {
+          "resource": ["taxOptimization"]
+        }
+      },
+      "options": [
+        {
+          "name": "Check Tax Impact",
+          "value": "checkTaxImpact",
+          "action": "Simulate pre-trade US/BR tax impact (Free)",
+          "description": "Compare naive disposal vs tax-optimized lot selection and receive an x402 dynamic quote",
+          "routing": {
+            "request": {
+              "method": "POST",
+              "url": "/api/v1/check-tax-impact",
+              "body": {
+                "jurisdiction": "={{$parameter[\"jurisdiction\"]}}",
+                "regime": "={{$parameter[\"regime\"]}}",
+                "chain": "={{$parameter[\"chain\"]}}",
+                "walletAddress": "={{$parameter[\"walletAddress\"] || undefined}}",
+                "targetAsset": "={{$parameter[\"targetAsset\"]}}",
+                "sellQuantity": "={{$parameter[\"sellQuantity\"] || undefined}}",
+                "targetProceedsUsd": "={{$parameter[\"targetProceedsUsd\"] || undefined}}",
+                "currentPriceUsd": "={{$parameter[\"currentPriceUsd\"]}}",
+                "targetQuoteAsset": "={{$parameter[\"targetQuoteAsset\"] || undefined}}",
+                "lots": "={{typeof $parameter[\"lotsJson\"] === \"string\" ? JSON.parse($parameter[\"lotsJson\"]) : $parameter[\"lotsJson\"]}}",
+                "referrerWallet": "={{$parameter[\"referrerWallet\"] || $credentials.referrerWallet || undefined}}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Compare Borrow vs Sell",
+          "value": "compareBorrowVsSell",
+          "action": "Compare Aave v3 borrow vs selling lots (Free)",
+          "description": "Quantify tax drag of selling crypto vs borrowing USDC on Aave v3",
+          "routing": {
+            "request": {
+              "method": "POST",
+              "url": "/api/v1/compare-borrow-vs-sell",
+              "body": {
+                "jurisdiction": "={{$parameter[\"jurisdiction\"]}}",
+                "regime": "={{$parameter[\"regime\"]}}",
+                "chain": "={{$parameter[\"chain\"]}}",
+                "borrowerAddress": "={{$parameter[\"walletAddress\"] || undefined}}",
+                "collateralAsset": "={{$parameter[\"collateralAsset\"]}}",
+                "collateralAmount": "={{$parameter[\"collateralAmount\"]}}",
+                "collateralPriceUsd": "={{$parameter[\"collateralPriceUsd\"]}}",
+                "collateralCostBasisUsd": "={{$parameter[\"collateralCostBasisUsd\"]}}",
+                "holdingDays": "={{$parameter[\"holdingDays\"]}}",
+                "liquidityNeededUsd": "={{$parameter[\"liquidityNeededUsd\"]}}",
+                "borrowApr": "={{$parameter[\"borrowApr\"]}}",
+                "horizonDays": "={{$parameter[\"horizonDays\"]}}",
+                "referrerWallet": "={{$parameter[\"referrerWallet\"] || $credentials.referrerWallet || undefined}}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Classify Deductible Expense",
+          "value": "classifyDeductibleExpense",
+          "action": "Classify deductible corporate expense (Free)",
+          "description": "Analyze tax shield, PIS/COFINS, IBS/CBS readiness, and FX/IOF savings for US/BR business expenses",
+          "routing": {
+            "request": {
+              "method": "POST",
+              "url": "/api/v1/classify-deductible-expense",
+              "body": {
+                "jurisdiction": "={{$parameter[\"jurisdiction\"]}}",
+                "regime": "={{$parameter[\"regime\"]}}",
+                "vendorName": "={{$parameter[\"vendorName\"]}}",
+                "description": "={{$parameter[\"expenseDescription\"]}}",
+                "amountUsd": "={{$parameter[\"amountUsd\"]}}",
+                "currency": "={{$parameter[\"currency\"]}}",
+                "paidWithInternationalCard": "={{$parameter[\"paidWithInternationalCard\"]}}",
+                "hasFiscalDocument": "={{$parameter[\"hasFiscalDocument\"]}}",
+                "fiscalDocumentId": "={{$parameter[\"fiscalDocumentId\"] || undefined}}",
+                "referrerWallet": "={{$parameter[\"referrerWallet\"] || $credentials.referrerWallet || undefined}}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Unlock Plan",
+          "value": "unlockPlan",
+          "action": "Unlock executable plan via x402 Base USDC",
+          "description": "Unlock selected lots, swap/Aave calldata, and accounting dossier after settling x402 Base USDC",
+          "routing": {
+            "request": {
+              "method": "POST",
+              "url": "/api/v1/unlock-plan",
+              "headers": {
+                "PAYMENT-SIGNATURE": "={{$parameter[\"paymentSignature\"] || \"\"}}"
+              },
+              "body": {
+                "planId": "={{$parameter[\"planId\"]}}",
+                "referrerWallet": "={{$parameter[\"referrerWallet\"] || $credentials.referrerWallet || undefined}}"
+              }
+            }
+          }
+        }
+      ],
+      "default": "checkTaxImpact"
+    },
+    {
+      "displayName": "Jurisdiction",
+      "name": "jurisdiction",
+      "type": "options",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "checkTaxImpact",
+            "compareBorrowVsSell",
+            "classifyDeductibleExpense"
+          ]
+        }
+      },
+      "options": [
+        { "name": "United States (US)", "value": "US" },
+        { "name": "Brazil (BR)", "value": "BR" }
+      ],
+      "default": "US"
+    },
+    {
+      "displayName": "Tax Regime",
+      "name": "regime",
+      "type": "options",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "checkTaxImpact",
+            "compareBorrowVsSell",
+            "classifyDeductibleExpense"
+          ]
+        }
+      },
+      "options": [
+        { "name": "US Individual", "value": "INDIVIDUAL" },
+        { "name": "US LLC Pass-Through", "value": "LLC_PASS_THROUGH" },
+        { "name": "US C-Corp", "value": "C_CORP" },
+        { "name": "BR PF Lei 14.754 (Offshore/Crypto)", "value": "PF_LEI_14754" },
+        { "name": "BR PF Domestic", "value": "PF_DOMESTIC" },
+        { "name": "BR PJ Lucro Real", "value": "PJ_LUCRO_REAL" },
+        { "name": "BR PJ Simples Export", "value": "PJ_SIMPLES_EXPORT" }
+      ],
+      "default": "INDIVIDUAL"
+    },
+    {
+      "displayName": "Chain",
+      "name": "chain",
+      "type": "options",
+      "displayOptions": {
+        "show": {
+          "operation": ["checkTaxImpact", "compareBorrowVsSell"]
+        }
+      },
+      "options": [
+        { "name": "Base", "value": "base" },
+        { "name": "Ethereum", "value": "ethereum" },
+        { "name": "Arbitrum", "value": "arbitrum" },
+        { "name": "Solana", "value": "solana" }
+      ],
+      "default": "base"
+    },
+    {
+      "displayName": "Wallet Address",
+      "name": "walletAddress",
+      "type": "string",
+      "default": "",
+      "displayOptions": {
+        "show": {
+          "operation": ["checkTaxImpact", "compareBorrowVsSell"]
+        }
+      }
+    },
+    {
+      "displayName": "Target Asset",
+      "name": "targetAsset",
+      "type": "string",
+      "default": "ETH",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["checkTaxImpact"]
+        }
+      }
+    },
+    {
+      "displayName": "Sell Quantity",
+      "name": "sellQuantity",
+      "type": "number",
+      "default": 1,
+      "displayOptions": {
+        "show": {
+          "operation": ["checkTaxImpact"]
+        }
+      }
+    },
+    {
+      "displayName": "Target Proceeds (USD)",
+      "name": "targetProceedsUsd",
+      "type": "number",
+      "default": 0,
+      "displayOptions": {
+        "show": {
+          "operation": ["checkTaxImpact"]
+        }
+      }
+    },
+    {
+      "displayName": "Current Price (USD)",
+      "name": "currentPriceUsd",
+      "type": "number",
+      "default": 3200,
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["checkTaxImpact"]
+        }
+      }
+    },
+    {
+      "displayName": "Target Quote Asset",
+      "name": "targetQuoteAsset",
+      "type": "string",
+      "default": "USDC",
+      "displayOptions": {
+        "show": {
+          "operation": ["checkTaxImpact"]
+        }
+      }
+    },
+    {
+      "displayName": "Tax Lots (JSON)",
+      "name": "lotsJson",
+      "type": "json",
+      "default": "[{\"lotId\":\"lot-1\",\"asset\":\"ETH\",\"quantity\":2,\"costBasisUsd\":1800,\"acquiredAt\":\"2023-06-01T00:00:00Z\",\"custodyLocation\":\"SELF_CUSTODY\"}]",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["checkTaxImpact"]
+        }
+      }
+    },
+    {
+      "displayName": "Collateral Asset",
+      "name": "collateralAsset",
+      "type": "string",
+      "default": "ETH",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["compareBorrowVsSell"]
+        }
+      }
+    },
+    {
+      "displayName": "Collateral Amount",
+      "name": "collateralAmount",
+      "type": "number",
+      "default": 10,
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["compareBorrowVsSell"]
+        }
+      }
+    },
+    {
+      "displayName": "Collateral Price (USD)",
+      "name": "collateralPriceUsd",
+      "type": "number",
+      "default": 3200,
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["compareBorrowVsSell"]
+        }
+      }
+    },
+    {
+      "displayName": "Collateral Cost Basis (USD)",
+      "name": "collateralCostBasisUsd",
+      "type": "number",
+      "default": 1500,
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["compareBorrowVsSell"]
+        }
+      }
+    },
+    {
+      "displayName": "Holding Days",
+      "name": "holdingDays",
+      "type": "number",
+      "default": 240,
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["compareBorrowVsSell"]
+        }
+      }
+    },
+    {
+      "displayName": "Liquidity Needed (USD)",
+      "name": "liquidityNeededUsd",
+      "type": "number",
+      "default": 8000,
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["compareBorrowVsSell"]
+        }
+      }
+    },
+    {
+      "displayName": "Borrow APR",
+      "name": "borrowApr",
+      "type": "number",
+      "default": 0.055,
+      "displayOptions": {
+        "show": {
+          "operation": ["compareBorrowVsSell"]
+        }
+      }
+    },
+    {
+      "displayName": "Horizon Days",
+      "name": "horizonDays",
+      "type": "number",
+      "default": 180,
+      "displayOptions": {
+        "show": {
+          "operation": ["compareBorrowVsSell"]
+        }
+      }
+    },
+    {
+      "displayName": "Vendor Name",
+      "name": "vendorName",
+      "type": "string",
+      "default": "Cloudflare",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["classifyDeductibleExpense"]
+        }
+      }
+    },
+    {
+      "displayName": "Expense Description",
+      "name": "expenseDescription",
+      "type": "string",
+      "default": "Edge compute and AI API infrastructure",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["classifyDeductibleExpense"]
+        }
+      }
+    },
+    {
+      "displayName": "Amount (USD)",
+      "name": "amountUsd",
+      "type": "number",
+      "default": 500,
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["classifyDeductibleExpense"]
+        }
+      }
+    },
+    {
+      "displayName": "Currency",
+      "name": "currency",
+      "type": "options",
+      "options": [
+        { "name": "USD", "value": "USD" },
+        { "name": "BRL", "value": "BRL" }
+      ],
+      "default": "USD",
+      "displayOptions": {
+        "show": {
+          "operation": ["classifyDeductibleExpense"]
+        }
+      }
+    },
+    {
+      "displayName": "Paid With International Card",
+      "name": "paidWithInternationalCard",
+      "type": "boolean",
+      "default": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["classifyDeductibleExpense"]
+        }
+      }
+    },
+    {
+      "displayName": "Has Fiscal Document (NF-e / Invoice)",
+      "name": "hasFiscalDocument",
+      "type": "boolean",
+      "default": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["classifyDeductibleExpense"]
+        }
+      }
+    },
+    {
+      "displayName": "Fiscal Document ID",
+      "name": "fiscalDocumentId",
+      "type": "string",
+      "default": "",
+      "displayOptions": {
+        "show": {
+          "operation": ["classifyDeductibleExpense"]
+        }
+      }
+    },
+    {
+      "displayName": "Plan ID",
+      "name": "planId",
+      "type": "string",
+      "default": "",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["unlockPlan"]
+        }
+      }
+    },
+    {
+      "displayName": "x402 Payment Signature",
+      "name": "paymentSignature",
+      "type": "string",
+      "default": "",
+      "description": "Base USDC x402 PAYMENT-SIGNATURE header after signing the 402 challenge",
+      "displayOptions": {
+        "show": {
+          "operation": ["unlockPlan"]
+        }
+      }
+    },
+    {
+      "displayName": "Referrer Wallet Override (20% Affiliate Share)",
+      "name": "referrerWallet",
+      "type": "string",
+      "default": "",
+      "description": "Optional Base/EVM wallet address overriding credential referrerWallet"
+    }
+  ]
+}
