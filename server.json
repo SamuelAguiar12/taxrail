@@ -1,0 +1,26 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.SamuelAguiar12/taxrail",
+  "description": "Autonomous US & Brazil crypto/DeFi/corporate tax optimization MCP server (free preview + dynamic x402 USDC unlock).",
+  "repository": {
+    "url": "https://github.com/SamuelAguiar12/taxrail",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "taxrail-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.taxrail.online/mcp"
+    }
+  ]
+}

@@ -101,6 +101,53 @@ export function buildPlanPaymentRequired(
       mimeType: "application/json",
     },
     accepts: [requirements],
+    extensions: {
+      bazaar: {
+        info: {
+          input: {
+            type: "http",
+            method: "POST",
+            bodyType: "json",
+            body: {
+              planId: record.plan.planId,
+            },
+          },
+          output: {
+            type: "json",
+            example: {
+              planId: record.plan.planId,
+              planType: record.plan.planType,
+              jurisdiction: record.plan.jurisdiction,
+              regime: record.plan.regime,
+              taxSavedUsd: record.pricing.taxSavedUsd,
+              accountingDossier: { format: "IRS_FORM_8949" },
+            },
+          },
+        },
+        schema: {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          type: "object",
+          properties: {
+            input: {
+              type: "object",
+              properties: {
+                body: {
+                  type: "object",
+                  required: ["planId"],
+                  properties: {
+                    planId: {
+                      type: "string",
+                      description:
+                        "Plan ID returned by free /api/v1/check-tax-impact, /api/v1/borrow-vs-sell, or /api/v1/classify-expense",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   };
 
   return { paymentRequired, requirements };

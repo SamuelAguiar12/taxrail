@@ -155,6 +155,12 @@ describe("TaxRail Edge Worker", () => {
           payTo: string;
           extra: Record<string, unknown>;
         }>;
+        extensions?: {
+          bazaar?: {
+            info?: { input?: { method?: string } };
+            schema?: Record<string, unknown>;
+          };
+        };
       };
       expect(unpaidBody.x402Version).toBe(2);
       expect(unpaidBody.accepts[0]?.scheme).toBe("exact");
@@ -162,6 +168,8 @@ describe("TaxRail Edge Worker", () => {
       expect(unpaidBody.accepts[0]?.asset).toBe(testEnv.X402_ASSET);
       expect(unpaidBody.accepts[0]?.amount).toBe(expectedAtomic);
       expect(unpaidBody.accepts[0]?.extra?.planId).toBe(preview.planId);
+      expect(unpaidBody.extensions?.bazaar?.info?.input?.method).toBe("POST");
+      expect(unpaidBody.extensions?.bazaar?.schema).toBeDefined();
 
       const decodedHeader = decodePaymentRequiredHeader(paymentRequiredHeader!);
       expect(decodedHeader.accepts[0]?.amount).toBe(expectedAtomic);
