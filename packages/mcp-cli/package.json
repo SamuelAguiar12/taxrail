@@ -1,5 +1,6 @@
 {
   "name": "taxrail-mcp",
+  "mcpName": "io.github.SamuelAguiar12/taxrail",
   "version": "0.1.0",
   "type": "module",
   "description": "TaxRail MCP Server — Autonomous US & Brazil crypto/DeFi/corporate tax optimization for AI agents (free preview + dynamic x402 unlock)",
