@@ -1,20 +1,50 @@
 {
-  "name": "@taxrail/mcp",
+  "name": "taxrail-mcp",
   "version": "0.1.0",
   "type": "module",
-  "bin": {
-    "taxrail-mcp": "./dist/index.js"
+  "description": "TaxRail MCP Server — Autonomous US & Brazil crypto/DeFi/corporate tax optimization for AI agents (free preview + dynamic x402 unlock)",
+  "license": "MIT",
+  "homepage": "https://api.taxrail.online",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SamuelAguiar12/taxrail.git",
+    "directory": "packages/mcp-cli"
   },
-  "main": "./src/index.ts",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "x402",
+    "tax",
+    "crypto-tax",
+    "ai-agents",
+    "defi",
+    "aave",
+    "irs",
+    "brazil",
+    "base",
+    "usdc"
+  ],
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "bin": {
+    "taxrail-mcp": "dist/index.js"
+  },
+  "main": "./dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:@modelcontextprotocol/* --external:zod --external:viem && chmod +x dist/index.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "viem": "^2.58.6",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
     "@taxrail/execution": "workspace:*",
     "@taxrail/shared": "workspace:*",
     "@taxrail/tax-engine": "workspace:*",
-    "zod": "^4.6.7"
+    "esbuild": "^0.28.2"
   }
 }

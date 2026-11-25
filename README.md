@@ -35,7 +35,7 @@ flowchart LR
 | `packages/shared` | Canonical TypeScript types (`types.ts`) and Zod schemas (`schemas.ts`) |
 | `packages/tax-engine` | Deterministic US & Brazil tax calculation, lot selection, TLH & Borrow-vs-Sell engine |
 | `packages/execution` | Non-custodial payload builders (`0x_v2`, `cow_swap`, `jupiter`, `aave_v3`) & accounting dossiers |
-| `packages/mcp-cli` | Local stdio MCP server (`@taxrail/mcp`) |
+| `packages/mcp-cli` | Local stdio MCP server (`taxrail-mcp`) |
 | `packages/agent-plugins` | Coinbase AgentKit `ActionProvider`, LangChain structured tools, and declarative n8n node spec |
 | `apps/edge-worker` | Cloudflare Workers + Hono API, remote `/mcp` endpoint, and `@x402/hono` payment gating |
 | `scripts/export-revenue-ledger.ts` | Base USDC ledger -> BRL PTAX converter & Simples Nacional (Fator R / PGDAS-D) exporter |
@@ -74,7 +74,7 @@ TaxRail aligns incentives with verifiable savings: **if an agent saves $0 in tax
 ### 1. Local MCP Server (`stdio`)
 
 ```bash
-npx @taxrail/mcp
+npx -y taxrail-mcp
 ```
 
 Add to Claude Desktop, Cursor, or any MCP-compatible agent runtime:
@@ -84,7 +84,7 @@ Add to Claude Desktop, Cursor, or any MCP-compatible agent runtime:
   "mcpServers": {
     "taxrail": {
       "command": "npx",
-      "args": ["-y", "@taxrail/mcp"]
+      "args": ["-y", "taxrail-mcp"]
     }
   }
 }
