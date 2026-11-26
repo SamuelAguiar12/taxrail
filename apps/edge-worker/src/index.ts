@@ -19,7 +19,12 @@ import {
   executeClassifyExpense,
   executeQuickOptimize,
 } from "./service.js";
-import { verifyQuickOptimizePayment, verifyUnlockPayment } from "./x402.js";
+import {
+  buildQuickOptimizeProbePaymentRequired,
+  buildUnlockProbePaymentRequired,
+  verifyQuickOptimizePayment,
+  verifyUnlockPayment,
+} from "./x402.js";
 
 async function parseAndValidateBody<TSchema extends z.ZodType>(
   request: Request,
@@ -99,6 +104,14 @@ export function createApp(): Hono<{ Bindings: Env }> {
       service: "taxrail-edge",
       version: "0.1.0",
       timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get("/favicon.ico", (c) => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#062c22"/><rect x="2" y="2" width="60" height="60" rx="12" fill="none" stroke="#10b981" stroke-width="3"/><text x="32" y="42" text-anchor="middle" font-family="ui-sans-serif,system-ui,-apple-system,sans-serif" font-size="28" font-weight="800" fill="#34d399">TR</text></svg>`;
+    return c.body(svg, 200, {
+      "Content-Type": "image/svg+xml",
+      "Cache-Control": "public, max-age=86400",
     });
   });
 
@@ -264,17 +277,59 @@ export function createApp(): Hono<{ Bindings: Env }> {
     }
   });
 
-  // Dynamic x402-gated Step 2 unlock endpoint
-  app.post("/api/v1/unlock-plan", async (c) => {
-    const parsed = await parseAndValidateBody(c.req.raw, UnlockPlanInputSchema);
-    if (!parsed.ok) {
-      return c.json({ error: parsed.error, issues: parsed.issues }, 400);
-    }
+  function send402Probe(
+    c: {
+      env: Env;
+      req: { url: string };
+      header: (name: string, value: string) => void;
+      json: (data: unknown, status: 402) => Response;
+    },
+    probe: { paymentRequired: unknown; paymentRequiredHeader: string }
+  ): Response {
+    c.header("PAYMENT-REQUIRED", probe.paymentRequiredHeader);
+    c.header("Cache-Control", "no-store");
+    return c.json(probe.paymentRequired, 402);
+  }
 
-    const planStore = createPlanStore(c.env);
+  // Dynamic x402-gated Step 2 unlock endpoint (GET probe + POST unlock)
+  app.get("/api/v1/unlock-plan", (c) => {
+    return send402Probe(c, buildUnlockProbePaymentRequired(c.env, c.req.url));
+  });
+
+  app.post("/api/v1/unlock-plan", async (c) => {
     const paymentHeader =
       c.req.header("PAYMENT-SIGNATURE") ?? c.req.header("X-PAYMENT") ?? null;
 
+    let rawJson: unknown;
+    try {
+      const text = await c.req.text();
+      rawJson = text.trim() ? JSON.parse(text) : {};
+    } catch {
+      return c.json({ error: "Invalid JSON request body" }, 400);
+    }
+
+    const parsed = UnlockPlanInputSchema.safeParse(rawJson);
+    if (!parsed.success) {
+      // Allow empty POST probes without payment header to receive a valid x402 402 challenge
+      const isEmptyObject =
+        rawJson !== null &&
+        typeof rawJson === "object" &&
+        !Array.isArray(rawJson) &&
+        Object.keys(rawJson as Record<string, unknown>).length === 0;
+      if (!paymentHeader && isEmptyObject) {
+        return send402Probe(c, buildUnlockProbePaymentRequired(c.env, c.req.url));
+      }
+      return c.json(
+        { error: "Validation error", issues: parsed.error.flatten() },
+        400
+      );
+    }
+
+    if (!paymentHeader && parsed.data.planId === "string") {
+      return send402Probe(c, buildUnlockProbePaymentRequired(c.env, c.req.url));
+    }
+
+    const planStore = createPlanStore(c.env);
     const result = await verifyUnlockPayment({
       planId: parsed.data.planId,
       paymentHeader,
@@ -310,7 +365,11 @@ export function createApp(): Hono<{ Bindings: Env }> {
     return c.json(result.record.plan, 200);
   });
 
-  // 1-step x402-gated optimization endpoint (returns HTTP 402 immediately on unpaid/probe calls)
+  // 1-step x402-gated optimization endpoint (GET probe + POST pay-then-execute)
+  app.get("/api/v1/x402/optimize", (c) => {
+    return send402Probe(c, buildQuickOptimizeProbePaymentRequired(c.env, c.req.url));
+  });
+
   app.post("/api/v1/x402/optimize", async (c) => {
     const paymentHeader =
       c.req.header("PAYMENT-SIGNATURE") ?? c.req.header("X-PAYMENT") ?? null;

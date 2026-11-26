@@ -153,6 +153,60 @@ export function buildPlanPaymentRequired(
   return { paymentRequired, requirements };
 }
 
+/**
+ * Builds a representative HTTP 402 probe response for GET / unpaid crawler probes on `/api/v1/unlock-plan`.
+ */
+export function buildUnlockProbePaymentRequired(
+  env: Env,
+  requestUrl?: string
+): { paymentRequired: PaymentRequired; paymentRequiredHeader: string } {
+  const now = new Date();
+  const expires = new Date(now.getTime() + 900_000);
+  const sampleRecord: StoredPlanRecord = {
+    createdAt: now.toISOString(),
+    expiresAt: expires.toISOString(),
+    unlocked: false,
+    pricing: {
+      taxSavedUsd: 345,
+      feeRatePct: 0.1,
+      totalFeeUsd: 34.5,
+      upfrontX402Usd: 34.5,
+      embeddedSwapFeeBps: 0,
+      embeddedSwapFeeUsd: 0,
+      enterpriseBalanceUsd: 0,
+      affiliateShareUsd: 6.9,
+      clientNetBenefitUsd: 310.5,
+      roiMultiple: 10,
+    },
+    plan: {
+      planId: "plan_sample_preview",
+      planType: "CRYPTO_DISPOSAL",
+      jurisdiction: "US",
+      regime: "INDIVIDUAL",
+    } as unknown as StoredPlanRecord["plan"],
+  };
+
+  const { paymentRequired } = buildPlanPaymentRequired(sampleRecord, env, requestUrl);
+  return {
+    paymentRequired,
+    paymentRequiredHeader: encodePaymentRequiredHeader(paymentRequired),
+  };
+}
+
+/**
+ * Builds the 402 header + payload for GET probes on `/api/v1/x402/optimize`.
+ */
+export function buildQuickOptimizeProbePaymentRequired(
+  env: Env,
+  requestUrl?: string
+): { paymentRequired: PaymentRequired; paymentRequiredHeader: string } {
+  const { paymentRequired } = buildQuickOptimizePaymentRequired(env, requestUrl);
+  return {
+    paymentRequired,
+    paymentRequiredHeader: encodePaymentRequiredHeader(paymentRequired),
+  };
+}
+
 function parsePaymentPayload(rawHeader: string): PaymentPayload | null {
   const trimmed = rawHeader.trim();
   if (!trimmed) return null;

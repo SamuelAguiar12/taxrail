@@ -193,6 +193,11 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
       version: "0.1.0",
       description:
         "Autonomous Tax-Optimization Rail for AI Agents (US + Brazil). Free tax-impact previews and x402-gated execution payloads & accounting dossiers.",
+      contact: {
+        name: "TaxRail",
+        email: "samuelaguiar1242@gmail.com",
+        url: "https://taxrail.online",
+      },
     },
     servers: [{ url: baseUrl }],
     paths: {
@@ -200,6 +205,7 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
         get: {
           operationId: "getHealth",
           summary: "Service health check",
+          security: [],
           responses: {
             "200": {
               description: "Healthy",
@@ -224,6 +230,7 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
           operationId: "checkTaxImpact",
           summary: "Compare baseline FIFO vs tax-optimized crypto disposal (FREE)",
           "x-payment": "none",
+          security: [],
           requestBody: {
             required: true,
             content: {
@@ -250,6 +257,7 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
           operationId: "compareBorrowVsSell",
           summary: "Compare selling appreciated crypto vs borrowing on Aave v3 (FREE)",
           "x-payment": "none",
+          security: [],
           requestBody: {
             required: true,
             content: {
@@ -276,6 +284,7 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
           operationId: "classifyDeductibleExpense",
           summary: "Classify business expense deductibility and tax shield (FREE)",
           "x-payment": "none",
+          security: [],
           requestBody: {
             required: true,
             content: {

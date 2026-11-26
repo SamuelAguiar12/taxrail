@@ -53,19 +53,53 @@ describe("TaxRail Edge Worker", () => {
       expect(text).toContain("referrerWallet");
     });
 
-    it("serves GET /openapi.json with OpenAPI 3.1 paths and x-payment metadata", async () => {
+    it("serves GET /favicon.ico for x402scan and browsers", async () => {
+      const res = await app.request("/favicon.ico", undefined, testEnv);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toContain("image/svg+xml");
+      const svg = await res.text();
+      expect(svg).toContain("<svg");
+      expect(svg).toContain("TR");
+    });
+
+    it("serves GET /openapi.json with OpenAPI 3.1 paths, contact.email, and security: [] on free routes", async () => {
       const res = await app.request("/openapi.json", undefined, testEnv);
       expect(res.status).toBe(200);
       const spec = (await res.json()) as {
         openapi: string;
+        info: { contact?: { email?: string } };
         paths: Record<string, Record<string, Record<string, unknown>>>;
       };
       expect(spec.openapi).toBe("3.1.0");
-      expect(spec.paths["/api/v1/check-tax-impact"]?.post).toBeDefined();
-      expect(spec.paths["/api/v1/borrow-vs-sell"]?.post).toBeDefined();
-      expect(spec.paths["/api/v1/classify-expense"]?.post).toBeDefined();
+      expect(spec.info?.contact?.email).toBe("samuelaguiar1242@gmail.com");
+      expect(spec.paths["/health"]?.get?.security).toEqual([]);
+      expect(spec.paths["/api/v1/check-tax-impact"]?.post?.security).toEqual([]);
+      expect(spec.paths["/api/v1/borrow-vs-sell"]?.post?.security).toEqual([]);
+      expect(spec.paths["/api/v1/classify-expense"]?.post?.security).toEqual([]);
       expect(spec.paths["/api/v1/unlock-plan"]?.post?.["x-payment"]).toBe("x402");
       expect(spec.paths["/api/v1/x402/optimize"]?.post?.["x-payment"]).toBe("x402");
+    });
+
+    it("returns HTTP 402 on GET /api/v1/unlock-plan, empty POST /api/v1/unlock-plan, and GET /api/v1/x402/optimize probes", async () => {
+      const getUnlockRes = await app.request("/api/v1/unlock-plan", undefined, testEnv);
+      expect(getUnlockRes.status).toBe(402);
+      expect(getUnlockRes.headers.get("PAYMENT-REQUIRED")).toBeTruthy();
+
+      const emptyPostUnlockRes = await app.request(
+        "/api/v1/unlock-plan",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: "{}",
+        },
+        testEnv
+      );
+      expect(emptyPostUnlockRes.status).toBe(402);
+      expect(emptyPostUnlockRes.headers.get("PAYMENT-REQUIRED")).toBeTruthy();
+
+      const getOptimizeRes = await app.request("/api/v1/x402/optimize", undefined, testEnv);
+      expect(getOptimizeRes.status).toBe(402);
+      expect(getOptimizeRes.headers.get("PAYMENT-REQUIRED")).toBeTruthy();
     });
 
     it("serves GET /.well-known/x402 with resource URLs for x402scan", async () => {
