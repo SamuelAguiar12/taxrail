@@ -1,6 +1,7 @@
 # TaxRail
 
-[![TaxRail MCP server](https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail/badges/score.svg)](https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail)
+[![SamuelAguiar12/taxrail MCP server](https://glama.ai/mcp/servers/SamuelAguiar12/taxrail/badges/score.svg)](https://glama.ai/mcp/servers/SamuelAguiar12/taxrail)
+[![TaxRail MCP connector](https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail/badges/score.svg)](https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail)
 
 **The Autonomous Tax-Optimization Rail for AI Agents — US & Brazil**
 
