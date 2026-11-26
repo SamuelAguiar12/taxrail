@@ -11,7 +11,9 @@ import type { z } from "zod";
 import { createCdpFacilitatorAuthHeaders } from "./cdp-auth.js";
 import {
   buildAgentCard,
+  buildAiCatalog,
   buildLlmsTxt,
+  buildMcpServerCard,
   buildOpenApiSpec,
   buildSkillMd,
   buildWellKnownX402,
@@ -200,6 +202,7 @@ export function createApp(): Hono<{ Bindings: Env }> {
         "X-PAYMENT",
         "PAYMENT-SIGNATURE",
         "MCP-Protocol-Version",
+        "MCP-Method",
         "Mcp-Session-Id",
       ],
       exposeHeaders: [
@@ -345,6 +348,30 @@ export function createApp(): Hono<{ Bindings: Env }> {
 
   app.get("/.well-known/agent-card.json", (c) => {
     return c.json(buildAgentCard(c.env, c.req.url));
+  });
+
+  app.get("/.well-known/mcp/server-card.json", (c) => {
+    return c.json(buildMcpServerCard(c.env, c.req.url), 200, {
+      "Cache-Control": "public, max-age=300",
+    });
+  });
+
+  app.get("/.well-known/mcp.json", (c) => {
+    return c.json(buildMcpServerCard(c.env, c.req.url), 200, {
+      "Cache-Control": "public, max-age=300",
+    });
+  });
+
+  app.get("/mcp/server-card", (c) => {
+    return c.json(buildMcpServerCard(c.env, c.req.url), 200, {
+      "Cache-Control": "public, max-age=300",
+    });
+  });
+
+  app.get("/.well-known/ai-catalog.json", (c) => {
+    return c.json(buildAiCatalog(c.env, c.req.url), 200, {
+      "Cache-Control": "public, max-age=300",
+    });
   });
 
   app.get("/llms.txt", (c) => {

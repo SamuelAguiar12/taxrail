@@ -1250,5 +1250,71 @@ describe("TaxRail Edge Worker", () => {
       expect(res.status).toBe(301);
       expect(res.headers.get("location")).toBe("http://localhost/openapi.json");
     });
+
+    it("supports MCP 2026-07-28 server/discover and SEP-2127 Server Card + AI Catalog routes", async () => {
+      const discoverRes = await app.request(
+        "/mcp",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2026-07-28",
+            "MCP-Method": "server/discover",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 99,
+            method: "server/discover",
+            params: {
+              _meta: {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+                "io.modelcontextprotocol/clientInfo": { name: "histor-test", version: "0.12.0" },
+              },
+            },
+          }),
+        },
+        testEnv
+      );
+
+      expect(discoverRes.status).toBe(200);
+      const discoverJson = (await discoverRes.json()) as {
+        result?: {
+          supportedVersions?: string[];
+          _meta?: {
+            "io.modelcontextprotocol/serverInfo"?: { name: string };
+          };
+        };
+      };
+      expect(discoverJson.result?.supportedVersions).toContain("2026-07-28");
+      expect(
+        discoverJson.result?._meta?.["io.modelcontextprotocol/serverInfo"]?.name
+      ).toBe("taxrail");
+
+      for (const path of [
+        "/.well-known/mcp/server-card.json",
+        "/.well-known/mcp.json",
+        "/mcp/server-card",
+      ]) {
+        const res = await app.request(path, undefined, testEnv);
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as {
+          name: string;
+          remotes: Array<{ url: string; supportedProtocolVersions: string[] }>;
+        };
+        expect(body.name).toBe("io.github.SamuelAguiar12/taxrail");
+        expect(body.remotes[0]?.url).toContain("/mcp");
+        expect(body.remotes[0]?.supportedProtocolVersions).toContain("2026-07-28");
+      }
+
+      const catalogRes = await app.request("/.well-known/ai-catalog.json", undefined, testEnv);
+      expect(catalogRes.status).toBe(200);
+      const catalog = (await catalogRes.json()) as {
+        services: Array<{ mediaType: string; card: { name: string } }>;
+      };
+      expect(catalog.services[0]?.mediaType).toBe("application/mcp-server-card+json");
+      expect(catalog.services[0]?.card.name).toBe("io.github.SamuelAguiar12/taxrail");
+    });
   });
 });

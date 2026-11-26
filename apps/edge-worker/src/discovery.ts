@@ -758,3 +758,56 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
     },
   };
 }
+
+/**
+ * Builds a SEP-2127 MCP Server Card describing TaxRail's Streamable HTTP MCP endpoint.
+ */
+export function buildMcpServerCard(env: Env, requestUrl?: string): Record<string, unknown> {
+  const baseUrl = resolvePublicBaseUrl(env, requestUrl);
+  return {
+    $schema: "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
+    name: "io.github.SamuelAguiar12/taxrail",
+    title: "TaxRail",
+    version: "0.2.0",
+    description:
+      "Autonomous pre-execution US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) and Brazil (Lei 14.754, R$35k rule, Lucro Real) crypto & DeFi tax optimization, Aave v3 borrow-vs-sell, and 0x/CoW/Jupiter calldata via MCP and x402 Base USDC.",
+    websiteUrl: "https://taxrail.online",
+    repository: "https://github.com/SamuelAguiar12/taxrail",
+    icons: [
+      {
+        src: `${baseUrl}/favicon.ico`,
+        type: "image/svg+xml",
+      },
+    ],
+    remotes: [
+      {
+        type: "streamable-http",
+        url: `${baseUrl}/mcp`,
+        supportedProtocolVersions: [
+          "2026-07-28",
+          "2025-11-25",
+          "2025-06-18",
+          "2025-03-26",
+          "2024-11-05",
+        ],
+      },
+    ],
+  };
+}
+
+/**
+ * Builds the `/.well-known/ai-catalog.json` discovery catalog referencing TaxRail's MCP Server Card.
+ */
+export function buildAiCatalog(env: Env, requestUrl?: string): Record<string, unknown> {
+  const baseUrl = resolvePublicBaseUrl(env, requestUrl);
+  return {
+    version: "1.0",
+    services: [
+      {
+        mediaType: "application/mcp-server-card+json",
+        url: `${baseUrl}/.well-known/mcp/server-card.json`,
+        card: buildMcpServerCard(env, requestUrl),
+      },
+    ],
+  };
+}

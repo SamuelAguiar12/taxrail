@@ -1,4 +1,6 @@
 import {
+  createMcpHandler,
+  isLegacyRequest,
   McpServer,
   WebStandardStreamableHTTPServerTransport,
 } from "@modelcontextprotocol/server";
@@ -379,24 +381,35 @@ export function createTaxRailMcpServer(deps: {
 }
 
 /**
- * Handles a stateless Streamable HTTP MCP request (`GET`/`POST`/`DELETE /mcp`)
- * on Cloudflare Workers using WebStandardStreamableHTTPServerTransport.
+ * Handles stateless Streamable HTTP MCP requests (`GET`/`POST`/`DELETE /mcp`)
+ * across both MCP 2026-07-28 (`server/discover` per-request envelope) and 2025-era (`initialize`)
+ * on Cloudflare Workers.
  */
 export async function handleMcpHttpRequest(
   request: Request,
   deps: { planStore: PlanStore; env: Env }
 ): Promise<Response> {
-  const server = createTaxRailMcpServer({
-    planStore: deps.planStore,
-    env: deps.env,
-    requestUrl: request.url,
-  });
+  const factory = () =>
+    createTaxRailMcpServer({
+      planStore: deps.planStore,
+      env: deps.env,
+      requestUrl: request.url,
+    });
 
-  const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableJsonResponse: true,
-  });
+  if (await isLegacyRequest(request)) {
+    const server = factory();
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
 
-  await server.connect(transport);
-  return transport.handleRequest(request);
+    await server.connect(transport);
+    return transport.handleRequest(request);
+  }
+
+  const modernHandler = createMcpHandler(factory, {
+    legacy: "reject",
+    responseMode: "json",
+  });
+  return modernHandler.fetch(request);
 }
