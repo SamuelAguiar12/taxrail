@@ -284,7 +284,7 @@ export function buildWellKnownX402(env: Env, requestUrl?: string): Record<string
       `${baseUrl}/api/v1/unlock-plan`,
     ],
     instructions:
-      "TaxRail provides autonomous US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH, Aave v3 borrow-vs-sell) and Brazil (Lei 14.754, R$35k rule, Lucro Real 34%, PIS/COFINS, IBS/CBS) crypto & corporate tax optimization. Micro-endpoints: GET /api/v1/x402/tlh-scan ($0.01 USDC) for wallet TLH discovery, GET /api/v1/x402/pre-trade-check ($0.01 USDC) for pre-swap HIFO/cliff/borrow guardrails, GET /api/v1/x402/br-35k-status ($0.005 USDC) for Brazil R$35k headroom, POST /api/v1/x402/optimize ($0.10 USDC) for 1-step full calldata + Form 8949/Lei 14.754 dossier, or unlock any free Step-1 preview via /api/v1/unlock-plan (10% of verified savings). Pass referrerWallet to earn 20% affiliate revshare.",
+      "TaxRail provides $0-upfront 1-click US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH, Aave v3 borrow-vs-sell) and Brazil (Lei 14.754, DeCripto, R$35k rule, Lucro Real 34%, PIS/COFINS, IBS/CBS) crypto & corporate tax optimization. $0-upfront execution: POST /api/v1/prepare-execution -> broadcast 0x v2 / Jupiter / Aave v3 tx (exact 10% savings fee paid from operation) -> POST /api/v1/claim-dossier to unlock CSV dossiers. Micro-endpoints (x402 Base USDC): GET /api/v1/x402/tlh-scan ($0.01) for 25-token TLH scan, GET /api/v1/x402/pre-trade-check ($0.01) for swap guardrails, GET /api/v1/x402/br-35k-status ($0.005) for Brazil R$35k headroom, POST /api/v1/x402/optimize ($0.10) for 1-step optimization, or POST /api/v1/unlock-plan for dossier-only/corporate expense unlocks. Pass referrerWallet to earn 20% affiliate revshare.",
   };
 }
 
@@ -854,7 +854,7 @@ export function buildMcpServerCard(env: Env, requestUrl?: string): Record<string
     title: "TaxRail",
     version: "0.3.0",
     description:
-      "Autonomous pre-execution US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) and Brazil (Lei 14.754, R$35k rule, Lucro Real) crypto & DeFi tax optimization, Aave v3 borrow-vs-sell, and 0x/CoW/Jupiter calldata via MCP and x402 Base USDC.",
+      "$0-upfront 1-click prepare_execution + claim_dossier (10% verified-savings fee paid from 0x v2 / Jupiter / Aave v3) for US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) & Brazil (Lei 14.754, DeCripto, R$35k, Lucro Real), plus x402 Base USDC fallback.",
     websiteUrl: "https://taxrail.online",
     repository: "https://github.com/SamuelAguiar12/taxrail",
     icons: [
