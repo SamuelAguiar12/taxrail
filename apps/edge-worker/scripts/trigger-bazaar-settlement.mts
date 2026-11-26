@@ -115,7 +115,7 @@ async function main() {
   if (endpoint === "tlh-scan" || endpoint === "all") {
     await runPaidCall({
       label: "$0.01 TLH Scan",
-      url: `${BASE_URL}/api/v1/x402/tlh-scan?walletAddress=0x0202e70990d90325A1Dca322C91471Be774E4B6f&chain=base&asset=ETH`,
+      url: `${BASE_URL}/api/v1/x402/tlh-scan?walletAddress=0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1&chain=base&asset=ALL`,
       method: "GET",
       live,
       rawPrivateKey,

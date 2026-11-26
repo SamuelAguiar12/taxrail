@@ -157,6 +157,139 @@ interface AlchemyTransfer {
   };
 }
 
+const STABLECOIN_SYMBOLS = new Set([
+  "USDC",
+  "USDT",
+  "DAI",
+  "USDBC",
+  "EURC",
+  "USDE",
+  "PYUSD",
+  "TUSD",
+  "FRAX",
+  "BUSD",
+]);
+
+const LIQUID_ASSET_PRIORITY = [
+  "ETH",
+  "CBBTC",
+  "WBTC",
+  "CBETH",
+  "WSTETH",
+  "AERO",
+  "LINK",
+  "UNI",
+  "AAVE",
+  "VIRTUAL",
+  "DEGEN",
+];
+
+function isValidVolatileSymbol(normSymbol: string): boolean {
+  return (
+    /^[A-Z0-9]{2,10}$/.test(normSymbol) &&
+    !STABLECOIN_SYMBOLS.has(normSymbol)
+  );
+}
+
+async function fetchTransfersFromAlchemy(params: {
+  walletAddress: string;
+  chain: EvmChain;
+  alchemyApiKey: string;
+  order: "asc" | "desc";
+}): Promise<AlchemyTransfer[]> {
+  const rpcUrl = `${ALCHEMY_RPC_HOSTS[params.chain]}/${params.alchemyApiKey}`;
+  const rpcRes = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "alchemy_getAssetTransfers",
+      params: [
+        {
+          fromBlock: "0x0",
+          toAddress: params.walletAddress,
+          category: ["external", "erc20"],
+          withMetadata: true,
+          excludeZeroValue: true,
+          order: params.order,
+          maxCount: "0x64",
+        },
+      ],
+    }),
+  });
+
+  if (!rpcRes.ok) {
+    throw new Error(`Alchemy RPC error (${rpcRes.status}) scanning wallet transfers.`);
+  }
+
+  const rpcJson = (await rpcRes.json()) as {
+    result?: { transfers?: AlchemyTransfer[] };
+    error?: { message?: string };
+  };
+
+  if (rpcJson.error) {
+    throw new Error(`Alchemy RPC rejected scan: ${rpcJson.error.message ?? "unknown error"}`);
+  }
+
+  return rpcJson.result?.transfers ?? [];
+}
+
+async function reconstructLotsFromTransfers(params: {
+  chain: SupportedChain;
+  assetLabel: string;
+  spotPriceUsd: number;
+  transfers: AlchemyTransfer[];
+  alchemyApiKey: string;
+  historicalBudget: { remaining: number };
+}): Promise<{ lots: TaxLot[]; warning?: string }> {
+  const priceByDayCache = new Map<string, number | null>();
+  const lots: TaxLot[] = [];
+  let missingHistoricalCount = 0;
+
+  for (let i = 0; i < params.transfers.length; i++) {
+    const t = params.transfers[i]!;
+    const acquiredAt = t.metadata?.blockTimestamp || new Date().toISOString();
+    const dayKey = `${params.assetLabel}:${acquiredAt.slice(0, 10)}`;
+
+    if (!priceByDayCache.has(dayKey)) {
+      if (params.historicalBudget.remaining > 0) {
+        params.historicalBudget.remaining -= 1;
+        const hist = await fetchHistoricalDayPriceUsd(
+          params.assetLabel,
+          acquiredAt,
+          params.alchemyApiKey
+        );
+        priceByDayCache.set(dayKey, hist);
+      } else {
+        priceByDayCache.set(dayKey, null);
+      }
+    }
+
+    const histPrice = priceByDayCache.get(dayKey) ?? null;
+    if (histPrice === null) {
+      missingHistoricalCount++;
+    }
+
+    lots.push({
+      lotId: `onchain_${params.chain}_${t.hash?.slice(0, 10) ?? i}_${i}`,
+      asset: params.assetLabel,
+      quantity: Number(t.value),
+      costBasisUsd: histPrice ?? params.spotPriceUsd,
+      acquiredAt,
+      custodyLocation: "SELF_CUSTODY",
+    });
+  }
+
+  return {
+    lots,
+    warning:
+      missingHistoricalCount > 0
+        ? `${missingHistoricalCount} on-chain ${params.assetLabel} lot(s) used current spot price as fallback cost basis because historical day pricing was unavailable.`
+        : undefined,
+  };
+}
+
 /**
  * Queries Alchemy `alchemy_getAssetTransfers` and price APIs to reconstruct incoming
  * tax lots automatically from a public EVM wallet address.
@@ -183,46 +316,18 @@ export async function fetchWalletLotsFromAlchemy(params: {
     );
   }
 
-  const rpcUrl = `${ALCHEMY_RPC_HOSTS[params.chain]}/${params.alchemyApiKey}`;
-  const [spot, rpcRes] = await Promise.all([
+  const [spot, allTransfers] = await Promise.all([
     fetchSpotPriceUsd(params.targetAsset, params.alchemyApiKey),
-    fetch(rpcUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "alchemy_getAssetTransfers",
-        params: [
-          {
-            fromBlock: "0x0",
-            toAddress: params.walletAddress,
-            category: ["external", "erc20"],
-            withMetadata: true,
-            excludeZeroValue: true,
-            order: "asc",
-            maxCount: "0x64",
-          },
-        ],
-      }),
+    fetchTransfersFromAlchemy({
+      walletAddress: params.walletAddress,
+      chain: params.chain,
+      alchemyApiKey: params.alchemyApiKey,
+      order: "asc",
     }),
   ]);
 
-  if (!rpcRes.ok) {
-    throw new Error(`Alchemy RPC error (${rpcRes.status}) scanning wallet transfers.`);
-  }
-
-  const rpcJson = (await rpcRes.json()) as {
-    result?: { transfers?: AlchemyTransfer[] };
-    error?: { message?: string };
-  };
-
-  if (rpcJson.error) {
-    throw new Error(`Alchemy RPC rejected scan: ${rpcJson.error.message ?? "unknown error"}`);
-  }
-
   const targetNorm = normalizeSymbol(params.targetAsset);
-  const transfers = (rpcJson.result?.transfers ?? []).filter((t) => {
+  const transfers = allTransfers.filter((t) => {
     if (!t.asset || !t.value || t.value <= 0) return false;
     return normalizeSymbol(t.asset) === targetNorm;
   });
@@ -233,57 +338,150 @@ export async function fetchWalletLotsFromAlchemy(params: {
     );
   }
 
-  const warnings: string[] = [];
-  const priceByDayCache = new Map<string, number | null>();
-  const lots: TaxLot[] = [];
-  let missingHistoricalCount = 0;
-
-  for (let i = 0; i < transfers.length; i++) {
-    const t = transfers[i]!;
-    const acquiredAt = t.metadata?.blockTimestamp || new Date().toISOString();
-    const dayKey = acquiredAt.slice(0, 10);
-
-    if (!priceByDayCache.has(dayKey)) {
-      // Cap historical API calls per scan at 10 distinct days to keep edge latency <1s
-      if (priceByDayCache.size < 10) {
-        const hist = await fetchHistoricalDayPriceUsd(
-          params.targetAsset,
-          acquiredAt,
-          params.alchemyApiKey
-        );
-        priceByDayCache.set(dayKey, hist);
-      } else {
-        priceByDayCache.set(dayKey, null);
-      }
-    }
-
-    const histPrice = priceByDayCache.get(dayKey) ?? null;
-    if (histPrice === null) {
-      missingHistoricalCount++;
-    }
-
-    lots.push({
-      lotId: `onchain_${params.chain}_${t.hash?.slice(0, 10) ?? i}_${i}`,
-      asset: params.targetAsset.toUpperCase(),
-      quantity: Number(t.value),
-      costBasisUsd: histPrice ?? spot.priceUsd,
-      acquiredAt,
-      custodyLocation: "SELF_CUSTODY",
-    });
-  }
-
-  if (missingHistoricalCount > 0) {
-    warnings.push(
-      `${missingHistoricalCount} on-chain lot(s) used current spot price as fallback cost basis because historical day pricing was unavailable.`
-    );
-  }
+  const { lots, warning } = await reconstructLotsFromTransfers({
+    chain: params.chain,
+    assetLabel: params.targetAsset.toUpperCase(),
+    spotPriceUsd: spot.priceUsd,
+    transfers,
+    alchemyApiKey: params.alchemyApiKey,
+    historicalBudget: { remaining: 10 },
+  });
 
   return {
     lots,
     currentPriceUsd: spot.priceUsd,
     priceSource: spot.source,
-    warnings,
+    warnings: warning ? [warning] : [],
   };
+}
+
+export interface PortfolioAssetLots {
+  asset: string;
+  currentPriceUsd: number;
+  priceSource: "alchemy" | "coinbase";
+  lots: TaxLot[];
+  warnings: string[];
+}
+
+/**
+ * Multi-asset portfolio scanner: with a single `alchemy_getAssetTransfers` call, discovers
+ * up to 5 liquid volatile tokens (or a single specified `targetAsset`) and reconstructs
+ * chronological tax lots with historical cost basis.
+ */
+export async function fetchWalletPortfolioFromAlchemy(params: {
+  walletAddress: string;
+  chain: SupportedChain;
+  targetAsset?: string;
+  alchemyApiKey?: string;
+}): Promise<{ assets: PortfolioAssetLots[]; warnings: string[] }> {
+  if (!params.alchemyApiKey) {
+    throw new Error(
+      "Automatic wallet scanning requires ALCHEMY_API_KEY, or pass explicit `lots` and `currentPriceUsd`."
+    );
+  }
+  if (!isEvmChain(params.chain)) {
+    throw new Error(
+      `Automatic wallet scanning is currently supported on EVM chains (base, ethereum, arbitrum); received "${params.chain}".`
+    );
+  }
+
+  const requestedAsset = params.targetAsset?.trim().toUpperCase();
+  if (requestedAsset && requestedAsset !== "ALL") {
+    const single = await fetchWalletLotsFromAlchemy({
+      walletAddress: params.walletAddress,
+      chain: params.chain,
+      targetAsset: requestedAsset,
+      alchemyApiKey: params.alchemyApiKey,
+    });
+    return {
+      assets: [
+        {
+          asset: requestedAsset,
+          currentPriceUsd: single.currentPriceUsd,
+          priceSource: single.priceSource,
+          lots: single.lots,
+          warnings: single.warnings,
+        },
+      ],
+      warnings: [],
+    };
+  }
+
+  const recentTransfers = await fetchTransfersFromAlchemy({
+    walletAddress: params.walletAddress,
+    chain: params.chain,
+    alchemyApiKey: params.alchemyApiKey,
+    order: "desc",
+  });
+
+  const grouped = new Map<string, AlchemyTransfer[]>();
+  for (const t of recentTransfers) {
+    if (!t.asset || !t.value || t.value <= 0) continue;
+    const norm = normalizeSymbol(t.asset);
+    if (!isValidVolatileSymbol(norm)) continue;
+    const bucket = grouped.get(norm);
+    if (bucket) {
+      bucket.push(t);
+    } else {
+      grouped.set(norm, [t]);
+    }
+  }
+
+  if (grouped.size === 0) {
+    return {
+      assets: [],
+      warnings: [
+        `No incoming volatile token transfers found for ${params.walletAddress} on ${params.chain}.`,
+      ],
+    };
+  }
+
+  const rankedSymbols = Array.from(grouped.keys())
+    .sort((a, b) => {
+      const idxA = LIQUID_ASSET_PRIORITY.indexOf(a);
+      const idxB = LIQUID_ASSET_PRIORITY.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return (grouped.get(b)?.length ?? 0) - (grouped.get(a)?.length ?? 0);
+    })
+    .slice(0, 5);
+
+  const spotResults = await Promise.allSettled(
+    rankedSymbols.map(async (sym) => ({
+      sym,
+      spot: await fetchSpotPriceUsd(sym, params.alchemyApiKey),
+    }))
+  );
+
+  const historicalBudget = { remaining: 12 };
+  const assets: PortfolioAssetLots[] = [];
+
+  for (const res of spotResults) {
+    if (res.status !== "fulfilled") continue;
+    const { sym, spot } = res.value;
+    const transfersChronological = [...(grouped.get(sym) ?? [])].reverse();
+    if (transfersChronological.length === 0) continue;
+
+    const { lots, warning } = await reconstructLotsFromTransfers({
+      chain: params.chain,
+      assetLabel: sym,
+      spotPriceUsd: spot.priceUsd,
+      transfers: transfersChronological,
+      alchemyApiKey: params.alchemyApiKey,
+      historicalBudget,
+    });
+
+    assets.push({
+      asset: sym,
+      currentPriceUsd: spot.priceUsd,
+      priceSource: spot.source,
+      lots,
+      warnings: warning ? [warning] : [],
+    });
+  }
+
+  return { assets, warnings: [] };
 }
 
 /**

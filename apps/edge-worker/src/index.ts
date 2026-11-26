@@ -288,6 +288,17 @@ export function createApp(): Hono<{ Bindings: Env }> {
         planStore,
         env: c.env,
       });
+      console.log(
+        JSON.stringify({
+          event: "preview_check_tax_impact",
+          chain: parsed.data.chain ?? "base",
+          asset: parsed.data.targetAsset,
+          jurisdiction: parsed.data.jurisdiction,
+          hasWallet: Boolean(parsed.data.walletAddress),
+          taxSavedUsd: response.taxSavedUsd,
+          planId: response.planId,
+        })
+      );
       return c.json(response, 200);
     } catch (err) {
       return c.json(
@@ -543,7 +554,7 @@ export function createApp(): Hono<{ Bindings: Env }> {
         : "base";
     const asset =
       c.req.query("asset") ||
-      (typeof bodyParams.asset === "string" ? bodyParams.asset : "ETH");
+      (typeof bodyParams.asset === "string" ? bodyParams.asset : "ALL");
     const rawJurisdiction =
       c.req.query("jurisdiction") ||
       (typeof bodyParams.jurisdiction === "string" ? bodyParams.jurisdiction : "US");
@@ -566,6 +577,20 @@ export function createApp(): Hono<{ Bindings: Env }> {
         ...(referrerWallet ? { referrerWallet } : {}),
       },
       { planStore, env: c.env }
+    );
+
+    console.log(
+      JSON.stringify({
+        event: "x402_tlh_scan_paid",
+        walletAddress,
+        chain,
+        requestedAsset: asset,
+        scannedAssets: scanResult.scannedAssets,
+        lotsScanned: scanResult.lotsScanned,
+        estimatedTaxSavingsUsd: scanResult.estimatedTaxSavingsUsd,
+        planId: scanResult.planId ?? null,
+        settlementTx: paymentResult.settlementTx ?? null,
+      })
     );
 
     if (paymentResult.paymentResponseHeader) {

@@ -4,6 +4,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-01-01",
   "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
   "vars": {
     "PAY_TO_ADDRESS": "0x0202e70990d90325A1Dca322C91471Be774E4B6f",
     "X402_NETWORK": "eip155:8453",

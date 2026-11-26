@@ -261,11 +261,33 @@ export interface DeductibleExpensePreview {
   disclaimer: string;
 }
 
+export interface AssetTlhSummary {
+  asset: string;
+  currentPriceUsd: number;
+  priceSource: "alchemy" | "coinbase" | "unavailable";
+  lotsScanned: number;
+  totalQuantity: number;
+  unrealizedPnlUsd: number;
+  estimatedTaxSavingsUsd: number;
+  recommendedStrategy?: string;
+  tlhOpportunities: Array<{
+    lotId: string;
+    acquiredAt: string;
+    quantity: number;
+    costBasisUsd: number;
+    unrealizedLossUsd: number;
+  }>;
+  planId?: string;
+  upfrontUnlockCostUsd?: number;
+}
+
 export interface WalletTlhScanResult {
   status: "TLH_OPPORTUNITIES_FOUND" | "SCAN_READY" | "NO_ELIGIBLE_LOTS_FOUND";
   walletAddress: string;
   chain: "base" | "ethereum" | "arbitrum";
   asset: string;
+  scannedAssets: string[];
+  assetBreakdown: AssetTlhSummary[];
   currentPriceUsd: number | null;
   priceSource: "alchemy" | "coinbase" | "unavailable";
   jurisdiction: Jurisdiction;

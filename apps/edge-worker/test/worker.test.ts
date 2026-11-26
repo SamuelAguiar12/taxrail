@@ -143,7 +143,7 @@ describe("TaxRail Edge Worker", () => {
       expect(unpaidBody.extensions?.bazaar?.info?.input?.method).toBe("GET");
 
       const paidRes = await app.request(
-        "/api/v1/x402/tlh-scan?walletAddress=0x0202e70990d90325A1Dca322C91471Be774E4B6f&chain=base&asset=ETH",
+        "/api/v1/x402/tlh-scan?walletAddress=0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1&chain=base",
         {
           method: "GET",
           headers: { "X-PAYMENT": `dev-bypass:${TEST_BYPASS_TOKEN}` },
@@ -153,11 +153,17 @@ describe("TaxRail Edge Worker", () => {
       expect(paidRes.status).toBe(200);
       const diag = (await paidRes.json()) as {
         walletAddress: string;
+        asset: string;
+        scannedAssets: string[];
+        assetBreakdown: unknown[];
         taxRiskScore: string;
         yearEndTlhDeadline: string;
         nextRecommendedAction: { endpoint: string };
       };
-      expect(diag.walletAddress).toBe("0x0202e70990d90325A1Dca322C91471Be774E4B6f");
+      expect(diag.walletAddress).toBe("0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1");
+      expect(diag.asset).toBe("ALL");
+      expect(Array.isArray(diag.scannedAssets)).toBe(true);
+      expect(Array.isArray(diag.assetBreakdown)).toBe(true);
       expect(["LOW", "MEDIUM", "HIGH"]).toContain(diag.taxRiskScore);
       expect(diag.yearEndTlhDeadline).toBe("2026-12-31");
       expect(diag.nextRecommendedAction.endpoint).toBeTruthy();

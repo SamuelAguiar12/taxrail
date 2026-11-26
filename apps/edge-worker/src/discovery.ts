@@ -176,12 +176,12 @@ Pass \`referrerWallet\` (e.g., \`"0xYourAgentWallet"\`) in any Step 1 request to
 ## Copy-Paste Agent Quickstart
 
 \`\`\`bash
-# $0.01 instant wallet TLH & tax-risk scan (x402 Base USDC)
-curl -i "${baseUrl}/api/v1/x402/tlh-scan?walletAddress=0x0202e70990d90325A1Dca322C91471Be774E4B6f&chain=base&asset=ETH"
+# $0.01 instant multi-asset wallet TLH & tax-risk scan (x402 Base USDC)
+curl -i "${baseUrl}/api/v1/x402/tlh-scan?walletAddress=0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1&chain=base&asset=ALL"
 
 # FREE tax-impact preview -> get planId & exact ROI quote
 curl -X POST "${baseUrl}/api/v1/check-tax-impact" -H "Content-Type: application/json" \\
-  -d '{"jurisdiction":"US","regime":"INDIVIDUAL","chain":"base","targetAsset":"ETH","sellQuantity":1,"walletAddress":"0x0202e70990d90325A1Dca322C91471Be774E4B6f"}'
+  -d '{"jurisdiction":"US","regime":"INDIVIDUAL","chain":"base","targetAsset":"ETH","sellQuantity":1,"walletAddress":"0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1"}'
 \`\`\`
 `;
 }
@@ -487,7 +487,8 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
               name: "asset",
               in: "query",
               required: false,
-              schema: { type: "string" },
+              description: "Default: ALL — scans all volatile tokens in wallet and returns savings + unlockable planId per token",
+              schema: { type: "string", default: "ALL" },
             },
             {
               name: "jurisdiction",

@@ -15,7 +15,7 @@ Use TaxRail **before** executing any crypto swap, rebalancing a portfolio, selli
 ## When to Trigger This Skill
 
 1. **Wallet Year-End TLH & Tax Risk Audit ($0.01 USDC, 1 parameter):**
-   Call `GET https://api.taxrail.online/api/v1/x402/tlh-scan?walletAddress=<0x...>&chain=base&asset=ETH&jurisdiction=US` via x402 Base USDC (`eip155:8453`). Returns unrealized PnL, year-end Tax-Loss Harvesting candidates, IRS 1099-DA / Brazil Lei 14.754 rules, and an unlockable `planId`.
+   Call `GET https://api.taxrail.online/api/v1/x402/tlh-scan?walletAddress=<0x...>&chain=base&asset=ALL&jurisdiction=US` via x402 Base USDC (`eip155:8453`). Scans all volatile tokens in the wallet and returns per-token unrealized PnL, year-end Tax-Loss Harvesting candidates, IRS 1099-DA / Brazil Lei 14.754 rules, and unlockable `planId`s.
 2. **Pre-Trade Swap / Disposal Simulation (FREE Step 1):**
    Call `POST https://api.taxrail.online/api/v1/check-tax-impact` (or MCP tool `check_tax_impact`) with either explicit `lots` or `walletAddress`. Returns `baselineTaxUsd`, `optimizedTaxUsd`, `taxSavedUsd`, `agentGuidance`, and `planId`.
 3. **Liquidity Without Selling (FREE Step 1):**

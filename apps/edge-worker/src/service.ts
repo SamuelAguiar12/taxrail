@@ -8,6 +8,7 @@ import {
 } from "@taxrail/execution";
 import type {
   AaveActionPayload,
+  AssetTlhSummary,
   BorrowVsSellInput,
   BorrowVsSellPreview,
   CheckTaxImpactInput,
@@ -31,6 +32,8 @@ import {
   fetchLive0xQuote,
   fetchSpotPriceUsd,
   fetchWalletLotsFromAlchemy,
+  fetchWalletPortfolioFromAlchemy,
+  type PortfolioAssetLots,
 } from "./onchain.js";
 import { DEFAULT_PLAN_TTL_SECONDS, type PlanStore } from "./plan-store.js";
 
@@ -439,7 +442,7 @@ export async function executeWalletTlhScan(
   deps: TaxRailServiceDeps
 ): Promise<WalletTlhScanResult> {
   const chain = params.chain ?? "base";
-  const asset = (params.asset || "ETH").trim().toUpperCase();
+  const requestedAsset = (params.asset || "ALL").trim().toUpperCase();
   const jurisdiction: Jurisdiction = params.jurisdiction ?? "US";
   const regime: TaxRegime =
     params.regime ?? (jurisdiction === "BR" ? "PF_LEI_14754" : "INDIVIDUAL");
@@ -450,53 +453,45 @@ export async function executeWalletTlhScan(
       : ["US_IRS_1099_DA_PER_WALLET", "HIFO_SPEC_ID", "YEAR_END_TLH_2026"];
 
   const warnings: string[] = [];
-  let currentPriceUsd: number | null = null;
-  let priceSource: "alchemy" | "coinbase" | "unavailable" = "unavailable";
+  let portfolioAssets: PortfolioAssetLots[] = [];
 
   try {
-    const spot = await fetchSpotPriceUsd(asset, deps.env.ALCHEMY_API_KEY);
-    currentPriceUsd = spot.priceUsd;
-    priceSource = spot.source;
-  } catch (err) {
-    warnings.push(
-      err instanceof Error
-        ? `Live price lookup unavailable: ${err.message}`
-        : `Live price lookup unavailable for ${asset}`
-    );
-  }
-
-  let scannedLots: Array<{
-    lotId: string;
-    quantity: number;
-    costBasisUsd: number;
-    acquiredAt: string;
-  }> = [];
-
-  try {
-    const walletScan = await fetchWalletLotsFromAlchemy({
+    const portfolio = await fetchWalletPortfolioFromAlchemy({
       walletAddress: params.walletAddress,
       chain,
-      targetAsset: asset,
+      targetAsset: requestedAsset,
       alchemyApiKey: deps.env.ALCHEMY_API_KEY,
     });
-    scannedLots = walletScan.lots;
-    currentPriceUsd = walletScan.currentPriceUsd;
-    priceSource = walletScan.priceSource;
-    warnings.push(...walletScan.warnings);
+    portfolioAssets = portfolio.assets;
+    warnings.push(...portfolio.warnings);
   } catch (err) {
     warnings.push(
       err instanceof Error ? err.message : "On-chain transfer scan returned no lots"
     );
   }
 
-  if (scannedLots.length === 0 || currentPriceUsd === null) {
+  if (portfolioAssets.length === 0) {
+    let fallbackPriceUsd: number | null = null;
+    let fallbackSource: "alchemy" | "coinbase" | "unavailable" = "unavailable";
+    if (requestedAsset !== "ALL") {
+      try {
+        const spot = await fetchSpotPriceUsd(requestedAsset, deps.env.ALCHEMY_API_KEY);
+        fallbackPriceUsd = spot.priceUsd;
+        fallbackSource = spot.source;
+      } catch {
+        // Leave null price safely
+      }
+    }
+
     return {
       status: "NO_ELIGIBLE_LOTS_FOUND",
       walletAddress: params.walletAddress,
       chain,
-      asset,
-      currentPriceUsd,
-      priceSource,
+      asset: requestedAsset,
+      scannedAssets: [],
+      assetBreakdown: [],
+      currentPriceUsd: fallbackPriceUsd,
+      priceSource: fallbackSource,
       jurisdiction,
       regime,
       lotsScanned: 0,
@@ -512,96 +507,138 @@ export async function executeWalletTlhScan(
         action: "CHECK_TAX_IMPACT",
         endpoint: "/api/v1/check-tax-impact",
         instruction:
-          "No incoming transfers detected on this chain/asset or external custody holds your lots. Send explicit `lots` to FREE POST /api/v1/check-tax-impact (or POST /api/v1/x402/optimize) to simulate HIFO/SpecID & TLH savings.",
+          "No incoming volatile token transfers detected on this chain or custody is elsewhere. Send explicit `lots` to FREE POST /api/v1/check-tax-impact (or POST /api/v1/x402/optimize) to simulate HIFO/SpecID & TLH savings.",
       },
       disclaimer:
         "Deterministic software calculation for tax planning, not legal or CPA advice.",
     };
   }
 
-  const totalQuantity = scannedLots.reduce((sum, lot) => sum + lot.quantity, 0);
-  let unrealizedPnlUsd = 0;
-  const tlhOpportunities: WalletTlhScanResult["tlhOpportunities"] = [];
+  const assetBreakdown: AssetTlhSummary[] = [];
+  const combinedTlhOpportunities: WalletTlhScanResult["tlhOpportunities"] = [];
+  let totalLotsScanned = 0;
+  let totalQuantityAll = 0;
+  let totalUnrealizedPnlUsd = 0;
+  let totalEstimatedTaxSavingsUsd = 0;
 
-  for (const lot of scannedLots) {
-    const lotPnl = (currentPriceUsd - lot.costBasisUsd) * lot.quantity;
-    unrealizedPnlUsd += lotPnl;
-    if (lotPnl < -1) {
-      tlhOpportunities.push({
-        lotId: lot.lotId,
-        acquiredAt: lot.acquiredAt,
-        quantity: lot.quantity,
-        costBasisUsd: lot.costBasisUsd,
-        unrealizedLossUsd: Number(Math.abs(lotPnl).toFixed(2)),
-      });
+  for (const item of portfolioAssets) {
+    warnings.push(...item.warnings);
+    if (item.lots.length === 0) continue;
+
+    const assetQty = item.lots.reduce((sum, l) => sum + l.quantity, 0);
+    let assetPnl = 0;
+    const assetTlh: AssetTlhSummary["tlhOpportunities"] = [];
+
+    for (const lot of item.lots) {
+      const lotPnl = (item.currentPriceUsd - lot.costBasisUsd) * lot.quantity;
+      assetPnl += lotPnl;
+      if (lotPnl < -1) {
+        const tlhEntry = {
+          lotId: lot.lotId,
+          acquiredAt: lot.acquiredAt,
+          quantity: lot.quantity,
+          costBasisUsd: lot.costBasisUsd,
+          unrealizedLossUsd: Number(Math.abs(lotPnl).toFixed(2)),
+        };
+        assetTlh.push(tlhEntry);
+        combinedTlhOpportunities.push(tlhEntry);
+      }
     }
+
+    const preview = await executeCheckTaxImpact(
+      {
+        jurisdiction,
+        regime,
+        chain,
+        walletAddress: params.walletAddress,
+        targetAsset: item.asset,
+        sellQuantity: assetQty,
+        currentPriceUsd: item.currentPriceUsd,
+        lots: item.lots,
+        ...(params.referrerWallet ? { referrerWallet: params.referrerWallet } : {}),
+      },
+      deps
+    );
+    warnings.push(...preview.warnings);
+
+    totalLotsScanned += item.lots.length;
+    totalQuantityAll += assetQty;
+    totalUnrealizedPnlUsd += assetPnl;
+    totalEstimatedTaxSavingsUsd += preview.taxSavedUsd;
+
+    assetBreakdown.push({
+      asset: item.asset,
+      currentPriceUsd: item.currentPriceUsd,
+      priceSource: item.priceSource,
+      lotsScanned: item.lots.length,
+      totalQuantity: Number(assetQty.toFixed(6)),
+      unrealizedPnlUsd: Number(assetPnl.toFixed(2)),
+      estimatedTaxSavingsUsd: preview.taxSavedUsd,
+      recommendedStrategy: preview.recommendedStrategy,
+      tlhOpportunities: assetTlh,
+      planId: preview.planId,
+      upfrontUnlockCostUsd: preview.pricing.upfrontX402Usd,
+    });
   }
 
-  const preview = await executeCheckTaxImpact(
-    {
-      jurisdiction,
-      regime,
-      chain,
-      walletAddress: params.walletAddress,
-      targetAsset: asset,
-      sellQuantity: totalQuantity,
-      currentPriceUsd,
-      lots: scannedLots.map((l) => ({
-        lotId: l.lotId,
-        asset,
-        quantity: l.quantity,
-        costBasisUsd: l.costBasisUsd,
-        acquiredAt: l.acquiredAt,
-        custodyLocation: "SELF_CUSTODY" as const,
-      })),
-      ...(params.referrerWallet ? { referrerWallet: params.referrerWallet } : {}),
-    },
-    deps
-  );
+  assetBreakdown.sort((a, b) => {
+    if (b.estimatedTaxSavingsUsd !== a.estimatedTaxSavingsUsd) {
+      return b.estimatedTaxSavingsUsd - a.estimatedTaxSavingsUsd;
+    }
+    return b.tlhOpportunities.length - a.tlhOpportunities.length;
+  });
 
+  const primaryAsset = assetBreakdown[0]!;
+  const unlockableAssets = assetBreakdown.filter((a) => a.estimatedTaxSavingsUsd > 0 && a.planId);
   const taxRiskScore: WalletTlhScanResult["taxRiskScore"] =
-    preview.taxSavedUsd >= 500 || tlhOpportunities.length >= 2
+    totalEstimatedTaxSavingsUsd >= 500 || combinedTlhOpportunities.length >= 2
       ? "HIGH"
-      : preview.taxSavedUsd > 0 || tlhOpportunities.length > 0
+      : totalEstimatedTaxSavingsUsd > 0 || combinedTlhOpportunities.length > 0
         ? "MEDIUM"
         : "LOW";
 
+  const multiAssetSummary =
+    unlockableAssets.length > 1
+      ? `Found tax savings across ${unlockableAssets.length} tokens (${unlockableAssets
+          .map((a) => `${a.asset}: $${a.estimatedTaxSavingsUsd.toFixed(2)} -> ${a.planId}`)
+          .join("; ")}). Unlock any plan via POST /api/v1/unlock-plan.`
+      : primaryAsset.estimatedTaxSavingsUsd > 0
+        ? `Executing unoptimized leaks $${totalEstimatedTaxSavingsUsd.toFixed(
+            2
+          )} in avoidable tax (${primaryAsset.asset}). Unlock full SpecID/HIFO lots, calldata & dossier via POST /api/v1/unlock-plan with {"planId":"${primaryAsset.planId}"} ($${(
+            primaryAsset.upfrontUnlockCostUsd ?? 0
+          ).toFixed(2)} USDC).`
+        : `Unlock full execution dossier for $0.00 (FREE) via POST /api/v1/unlock-plan with {"planId":"${primaryAsset.planId}"}.`;
+
   return {
-    status: tlhOpportunities.length > 0 ? "TLH_OPPORTUNITIES_FOUND" : "SCAN_READY",
+    status: combinedTlhOpportunities.length > 0 ? "TLH_OPPORTUNITIES_FOUND" : "SCAN_READY",
     walletAddress: params.walletAddress,
     chain,
-    asset,
-    currentPriceUsd,
-    priceSource,
+    asset: requestedAsset,
+    scannedAssets: assetBreakdown.map((a) => a.asset),
+    assetBreakdown,
+    currentPriceUsd: primaryAsset.currentPriceUsd,
+    priceSource: primaryAsset.priceSource,
     jurisdiction,
     regime,
-    lotsScanned: scannedLots.length,
-    totalQuantity: Number(totalQuantity.toFixed(6)),
-    unrealizedPnlUsd: Number(unrealizedPnlUsd.toFixed(2)),
-    estimatedTaxSavingsUsd: preview.taxSavedUsd,
+    lotsScanned: totalLotsScanned,
+    totalQuantity: Number(totalQuantityAll.toFixed(6)),
+    unrealizedPnlUsd: Number(totalUnrealizedPnlUsd.toFixed(2)),
+    estimatedTaxSavingsUsd: Number(totalEstimatedTaxSavingsUsd.toFixed(2)),
     taxRiskScore,
     yearEndTlhDeadline: "2026-12-31",
     rulesApplied,
-    tlhOpportunities,
-    planId: preview.planId,
-    upfrontUnlockCostUsd: preview.pricing.upfrontX402Usd,
-    warnings: [...warnings, ...preview.warnings],
-    nextRecommendedAction:
-      preview.taxSavedUsd > 0
-        ? {
-            action: "UNLOCK_PLAN",
-            endpoint: "/api/v1/unlock-plan",
-            planId: preview.planId,
-            instruction:
-              preview.agentGuidance ??
-              `Unlock full lot selection, calldata & dossier via POST /api/v1/unlock-plan with {"planId":"${preview.planId}"}.`,
-          }
-        : {
-            action: "UNLOCK_PLAN",
-            endpoint: "/api/v1/unlock-plan",
-            planId: preview.planId,
-            instruction: `Unlock full execution dossier for $0.00 (FREE) via POST /api/v1/unlock-plan with {"planId":"${preview.planId}"}.`,
-          },
-    disclaimer: preview.disclaimer,
+    tlhOpportunities: combinedTlhOpportunities,
+    planId: primaryAsset.planId,
+    upfrontUnlockCostUsd: primaryAsset.upfrontUnlockCostUsd,
+    warnings,
+    nextRecommendedAction: {
+      action: "UNLOCK_PLAN",
+      endpoint: "/api/v1/unlock-plan",
+      planId: primaryAsset.planId,
+      instruction: multiAssetSummary,
+    },
+    disclaimer:
+      "Deterministic software calculation for tax planning, not legal or CPA advice.",
   };
 }
