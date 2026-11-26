@@ -65,6 +65,86 @@ describe("TaxRail Edge Worker", () => {
       expect(spec.paths["/api/v1/borrow-vs-sell"]?.post).toBeDefined();
       expect(spec.paths["/api/v1/classify-expense"]?.post).toBeDefined();
       expect(spec.paths["/api/v1/unlock-plan"]?.post?.["x-payment"]).toBe("x402");
+      expect(spec.paths["/api/v1/x402/optimize"]?.post?.["x-payment"]).toBe("x402");
+    });
+
+    it("serves GET /.well-known/x402 with resource URLs for x402scan", async () => {
+      const res = await app.request("/.well-known/x402", undefined, testEnv);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        version: number;
+        resources: string[];
+        instructions: string;
+      };
+      expect(body.version).toBe(1);
+      expect(body.resources).toContain("https://api.taxrail.online/api/v1/x402/optimize");
+      expect(body.resources).toContain("https://api.taxrail.online/api/v1/unlock-plan");
+    });
+
+    it("returns HTTP 402 with rich SEO & Bazaar metadata on unpaid /api/v1/x402/optimize probes, and unlocks on dev-bypass", async () => {
+      const probeRes = await app.request(
+        "/api/v1/x402/optimize",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: "{}",
+        },
+        testEnv
+      );
+      expect(probeRes.status).toBe(402);
+      expect(probeRes.headers.get("PAYMENT-REQUIRED")).toBeTruthy();
+      const probeBody = (await probeRes.json()) as {
+        resource: { description: string };
+        accepts: Array<{ amount: string }>;
+        extensions?: { bazaar?: unknown };
+      };
+      expect(probeBody.accepts[0]?.amount).toBe("100000");
+      expect(probeBody.resource.description).toContain("IRS 1099-DA");
+      expect(probeBody.resource.description).toContain("Lei 14.754");
+      expect(probeBody.extensions?.bazaar).toBeDefined();
+
+      const paidRes = await app.request(
+        "/api/v1/x402/optimize",
+        {
+          method: "POST",
+          headers: jsonHeaders({ "X-PAYMENT": `dev-bypass:${TEST_BYPASS_TOKEN}` }),
+          body: JSON.stringify({
+            jurisdiction: "US",
+            regime: "INDIVIDUAL",
+            chain: "base",
+            targetAsset: "ETH",
+            sellQuantity: 1,
+            currentPriceUsd: 3000,
+            asOfDate: "2026-06-01T00:00:00Z",
+            lots: [
+              {
+                lotId: "quick-fifo",
+                asset: "ETH",
+                quantity: 1,
+                costBasisUsd: 1000,
+                acquiredAt: "2024-01-01T00:00:00Z",
+                custodyLocation: "SELF_CUSTODY",
+              },
+              {
+                lotId: "quick-hifo",
+                asset: "ETH",
+                quantity: 1,
+                costBasisUsd: 2700,
+                acquiredAt: "2025-01-01T00:00:00Z",
+                custodyLocation: "SELF_CUSTODY",
+              },
+            ],
+          }),
+        },
+        testEnv
+      );
+      expect(paidRes.status).toBe(200);
+      const plan = (await paidRes.json()) as {
+        selectedLots?: Array<{ lotId: string }>;
+        accountingDossier?: { format: string };
+      };
+      expect(plan.selectedLots?.[0]?.lotId).toBe("quick-hifo");
+      expect(plan.accountingDossier?.format).toBe("IRS_FORM_8949");
     });
   });
 

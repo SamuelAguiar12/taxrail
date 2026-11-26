@@ -8,7 +8,7 @@ import {
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { z } from "zod";
-import { buildAgentCard, buildLlmsTxt, buildOpenApiSpec } from "./discovery.js";
+import { buildAgentCard, buildLlmsTxt, buildOpenApiSpec, buildWellKnownX402 } from "./discovery.js";
 import { type Env, resolvePublicBaseUrl } from "./env.js";
 import { handleMcpHttpRequest } from "./mcp.js";
 import { fetchSpotPriceUsd, fetchWalletLotsFromAlchemy } from "./onchain.js";
@@ -17,8 +17,9 @@ import {
   executeBorrowVsSell,
   executeCheckTaxImpact,
   executeClassifyExpense,
+  executeQuickOptimize,
 } from "./service.js";
-import { verifyUnlockPayment } from "./x402.js";
+import { verifyQuickOptimizePayment, verifyUnlockPayment } from "./x402.js";
 
 async function parseAndValidateBody<TSchema extends z.ZodType>(
   request: Request,
@@ -114,6 +115,10 @@ export function createApp(): Hono<{ Bindings: Env }> {
 
   app.get("/openapi.json", (c) => {
     return c.json(buildOpenApiSpec(c.env, c.req.url));
+  });
+
+  app.get("/.well-known/x402", (c) => {
+    return c.json(buildWellKnownX402(c.env, c.req.url));
   });
 
   const glamaClaimPayload = {
@@ -303,6 +308,53 @@ export function createApp(): Hono<{ Bindings: Env }> {
     }
 
     return c.json(result.record.plan, 200);
+  });
+
+  // 1-step x402-gated optimization endpoint (returns HTTP 402 immediately on unpaid/probe calls)
+  app.post("/api/v1/x402/optimize", async (c) => {
+    const paymentHeader =
+      c.req.header("PAYMENT-SIGNATURE") ?? c.req.header("X-PAYMENT") ?? null;
+
+    const paymentResult = await verifyQuickOptimizePayment({
+      paymentHeader,
+      env: c.env,
+      requestUrl: c.req.url,
+    });
+
+    if (paymentResult.status !== "paid") {
+      c.header("PAYMENT-REQUIRED", paymentResult.paymentRequiredHeader);
+      c.header("Cache-Control", "no-store");
+      const body =
+        paymentResult.status === "payment_required"
+          ? paymentResult.paymentRequired
+          : {
+              ...paymentResult.paymentRequired,
+              error: paymentResult.reason,
+            };
+      return c.json(body, 402);
+    }
+
+    const parsed = await parseAndValidateBody(c.req.raw, CheckTaxImpactRequestSchema);
+    if (!parsed.ok) {
+      return c.json({ error: parsed.error, issues: parsed.issues }, 400);
+    }
+
+    try {
+      const planStore = createPlanStore(c.env);
+      const plan = await executeQuickOptimize(parsed.data, {
+        planStore,
+        env: c.env,
+      });
+      if (paymentResult.paymentResponseHeader) {
+        c.header("PAYMENT-RESPONSE", paymentResult.paymentResponseHeader);
+      }
+      return c.json(plan, 200);
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : "Failed to optimize tax plan" },
+        400
+      );
+    }
   });
 
   // Stateless Streamable HTTP MCP server

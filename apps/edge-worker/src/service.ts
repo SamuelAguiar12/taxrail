@@ -55,10 +55,16 @@ function resolveTreasuryWallet(env: Env): string {
  * Runs Step 1 crypto disposal optimization, stores the full unlockable plan (15m TTL),
  * and returns only the redacted preview (never leaking lotIds or calldata).
  */
-export async function executeCheckTaxImpact(
+async function prepareCryptoOptimizationPlan(
   request: CheckTaxImpactRequest,
   deps: TaxRailServiceDeps
-): Promise<CheckTaxImpactRedactedResponse> {
+): Promise<{
+  redacted: CheckTaxImpactRedactedResponse;
+  fullPlan: FullTaxOptimizationPlan;
+  pricing: FullTaxOptimizationPlan["pricing"];
+  createdAt: string;
+  expiresAt: string;
+}> {
   const chain = request.chain ?? "base";
   const hydrationWarnings: string[] = [];
 
@@ -177,11 +183,31 @@ export async function executeCheckTaxImpact(
     disclaimer: analysis.redacted.disclaimer,
   };
 
+  return {
+    redacted: analysis.redacted,
+    fullPlan,
+    pricing: analysis.pricing,
+    createdAt,
+    expiresAt,
+  };
+}
+
+/**
+ * Runs Step 1 crypto disposal optimization, stores the full unlockable plan (15m TTL),
+ * and returns only the redacted preview (never leaking lotIds or calldata).
+ */
+export async function executeCheckTaxImpact(
+  request: CheckTaxImpactRequest,
+  deps: TaxRailServiceDeps
+): Promise<CheckTaxImpactRedactedResponse> {
+  const { redacted, fullPlan, pricing, createdAt, expiresAt } =
+    await prepareCryptoOptimizationPlan(request, deps);
+
   await deps.planStore.put(
-    analysis.redacted.planId,
+    redacted.planId,
     {
       plan: fullPlan,
-      pricing: analysis.pricing,
+      pricing,
       unlocked: false,
       createdAt,
       expiresAt,
@@ -189,7 +215,19 @@ export async function executeCheckTaxImpact(
     DEFAULT_PLAN_TTL_SECONDS
   );
 
-  return analysis.redacted;
+  return redacted;
+}
+
+/**
+ * Runs 1-step crypto disposal optimization after upfront $0.10 x402 payment settles
+ * and immediately returns the full unlocked plan (lots, calldata, and accounting dossier).
+ */
+export async function executeQuickOptimize(
+  request: CheckTaxImpactRequest,
+  deps: TaxRailServiceDeps
+): Promise<FullTaxOptimizationPlan> {
+  const { fullPlan } = await prepareCryptoOptimizationPlan(request, deps);
+  return fullPlan;
 }
 
 /**

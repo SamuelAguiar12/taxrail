@@ -97,7 +97,7 @@ export function buildPlanPaymentRequired(
     error: "Payment Required",
     resource: {
       url: `${baseUrl}/api/v1/unlock-plan`,
-      description: `Unlock TaxRail optimization plan ${record.plan.planId} (saves $${record.pricing.taxSavedUsd.toFixed(2)})`,
+      description: `TaxRail: Autonomous US (IRS 1099-DA, Form 8949, HIFO/SpecID, tax-loss harvesting, Aave v3 borrow-vs-sell) & Brazil (Lei 14.754, Lucro Real 34%, PIS/COFINS, IBS/CBS) crypto & corporate tax optimization — unlocks calldata & accounting dossiers (plan ${record.plan.planId}, saves $${record.pricing.taxSavedUsd.toFixed(2)}).`,
       mimeType: "application/json",
     },
     accepts: [requirements],
@@ -291,6 +291,223 @@ export async function verifyUnlockPayment(params: {
     return {
       status: "settlement_failed",
       record,
+      reason: err instanceof Error ? err.message : "x402 facilitator communication error",
+      paymentRequired,
+      paymentRequiredHeader,
+    };
+  }
+}
+
+export type QuickOptimizePaymentResult =
+  | {
+      status: "paid";
+      settlementTx?: string;
+      paymentResponseHeader?: string;
+    }
+  | {
+      status: "payment_required" | "invalid_payment" | "settlement_failed";
+      reason?: string;
+      paymentRequired: PaymentRequired;
+      paymentRequiredHeader: string;
+    };
+
+/**
+ * Builds the 1-step $0.10 USDC x402 v2 PaymentRequired challenge for `/api/v1/x402/optimize`,
+ * ensuring x402 crawlers (x402scan, Bazaar) and 1-call agents get rich discovery metadata.
+ */
+export function buildQuickOptimizePaymentRequired(
+  env: Env,
+  requestUrl?: string
+): { paymentRequired: PaymentRequired; requirements: PaymentRequirements } {
+  const network = (env.X402_NETWORK || DEFAULT_X402_NETWORK) as Network;
+  const asset = env.X402_ASSET || DEFAULT_X402_ASSET;
+  const payTo = env.PAY_TO_ADDRESS || DEFAULT_PAY_TO_ADDRESS;
+  const baseUrl = resolvePublicBaseUrl(env, requestUrl);
+
+  const requirements: PaymentRequirements = {
+    scheme: "exact",
+    network,
+    asset,
+    amount: usdToUsdcAtomic(0.1),
+    payTo,
+    maxTimeoutSeconds: 300,
+    extra: {
+      name: "USD Coin",
+      version: "2",
+      pricingModel: "flat-quick-optimize",
+      affiliateRevsharePct: 0.2,
+    },
+  };
+
+  const paymentRequired: PaymentRequired = {
+    x402Version: 2,
+    error: "Payment Required",
+    resource: {
+      url: `${baseUrl}/api/v1/x402/optimize`,
+      description:
+        "TaxRail 1-Step Tax Optimization: Autonomous US (IRS 1099-DA, Form 8949, HIFO/SpecID, tax-loss harvesting) & Brazil (Lei 14.754, R$35k rule, Lucro Real) crypto tax calculation, wallet auto-scan, 0x/CoW/Jupiter swap calldata, and 20% affiliate revshare.",
+      mimeType: "application/json",
+    },
+    accepts: [requirements],
+    extensions: {
+      bazaar: {
+        info: {
+          input: {
+            type: "http",
+            method: "POST",
+            bodyType: "json",
+            body: {
+              jurisdiction: "US",
+              regime: "INDIVIDUAL",
+              chain: "base",
+              targetAsset: "ETH",
+              sellQuantity: 1,
+              currentPriceUsd: 3000,
+              lots: [
+                {
+                  lotId: "example-lot-1",
+                  asset: "ETH",
+                  quantity: 1,
+                  costBasisUsd: 1800,
+                  acquiredAt: "2024-06-01T00:00:00Z",
+                  custodyLocation: "SELF_CUSTODY",
+                },
+              ],
+            },
+          },
+          output: {
+            type: "json",
+            example: {
+              planId: "plan_example",
+              taxSavedUsd: 240,
+              selectedLots: [{ lotId: "example-lot-1", gainOrLossUsd: 1200 }],
+              accountingDossier: { format: "IRS_FORM_8949" },
+            },
+          },
+        },
+        schema: {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          type: "object",
+          properties: {
+            input: {
+              type: "object",
+              properties: {
+                body: {
+                  type: "object",
+                  required: ["jurisdiction", "regime", "targetAsset"],
+                  properties: {
+                    jurisdiction: { type: "string", enum: ["US", "BR"] },
+                    regime: {
+                      type: "string",
+                      enum: [
+                        "INDIVIDUAL",
+                        "LLC_PASS_THROUGH",
+                        "C_CORP",
+                        "PF_LEI_14754",
+                        "PF_DOMESTIC",
+                        "PJ_LUCRO_REAL",
+                        "PJ_SIMPLES_EXPORT",
+                      ],
+                    },
+                    chain: { type: "string", enum: ["base", "ethereum", "arbitrum", "solana"] },
+                    walletAddress: { type: "string" },
+                    targetAsset: { type: "string" },
+                    sellQuantity: { type: "number" },
+                    currentPriceUsd: { type: "number" },
+                    referrerWallet: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  return { paymentRequired, requirements };
+}
+
+/**
+ * Verifies & settles the 1-step $0.10 USDC x402 payment before parsing/running the optimization.
+ */
+export async function verifyQuickOptimizePayment(params: {
+  paymentHeader?: string | null;
+  env: Env;
+  requestUrl?: string;
+}): Promise<QuickOptimizePaymentResult> {
+  const { paymentHeader, env, requestUrl } = params;
+  const { paymentRequired, requirements } = buildQuickOptimizePaymentRequired(env, requestUrl);
+  const paymentRequiredHeader = encodePaymentRequiredHeader(paymentRequired);
+
+  const trimmedHeader = paymentHeader?.trim();
+  if (!trimmedHeader) {
+    return {
+      status: "payment_required",
+      paymentRequired,
+      paymentRequiredHeader,
+    };
+  }
+
+  if (
+    env.X402_DEV_BYPASS_TOKEN &&
+    trimmedHeader === `dev-bypass:${env.X402_DEV_BYPASS_TOKEN}`
+  ) {
+    return {
+      status: "paid",
+      settlementTx: "dev-bypass",
+    };
+  }
+
+  const paymentPayload = parsePaymentPayload(trimmedHeader);
+  if (!paymentPayload) {
+    return {
+      status: "invalid_payment",
+      reason: "Malformed x402 payment signature header",
+      paymentRequired,
+      paymentRequiredHeader,
+    };
+  }
+
+  const facilitator = new HTTPFacilitatorClient({
+    url: env.FACILITATOR_URL || DEFAULT_FACILITATOR_URL,
+  });
+
+  try {
+    const verifyResult = await facilitator.verify(paymentPayload, requirements);
+    if (!verifyResult.isValid) {
+      return {
+        status: "invalid_payment",
+        reason:
+          verifyResult.invalidMessage ||
+          verifyResult.invalidReason ||
+          "Facilitator rejected payment verification",
+        paymentRequired,
+        paymentRequiredHeader,
+      };
+    }
+
+    const settleResult = await facilitator.settle(paymentPayload, requirements);
+    if (!settleResult.success) {
+      return {
+        status: "settlement_failed",
+        reason:
+          settleResult.errorMessage ||
+          settleResult.errorReason ||
+          "Facilitator settlement failed",
+        paymentRequired,
+        paymentRequiredHeader,
+      };
+    }
+
+    return {
+      status: "paid",
+      settlementTx: settleResult.transaction,
+      paymentResponseHeader: encodePaymentResponseHeader(settleResult),
+    };
+  } catch (err) {
+    return {
+      status: "settlement_failed",
       reason: err instanceof Error ? err.message : "x402 facilitator communication error",
       paymentRequired,
       paymentRequiredHeader,

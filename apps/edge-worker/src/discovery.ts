@@ -44,6 +44,7 @@ export function buildAgentCard(env: Env, requestUrl?: string): Record<string, un
       rest: {
         baseUrl: `${baseUrl}/api/v1`,
         openapi: `${baseUrl}/openapi.json`,
+        x402Manifest: `${baseUrl}/.well-known/x402`,
       },
       llmsTxt: `${baseUrl}/llms.txt`,
     },
@@ -154,9 +155,27 @@ Pass \`referrerWallet\` (e.g., \`"0xYourAgentWallet"\`) in any Step 1 request to
 
 - MCP Streamable HTTP: \`${baseUrl}/mcp\`
 - A2A Agent Card: \`${baseUrl}/.well-known/agent.json\`
+- x402 Discovery Manifest: \`${baseUrl}/.well-known/x402\`
+- 1-Step Paid Optimize: \`POST ${baseUrl}/api/v1/x402/optimize\` ($0.10 USDC)
 - OpenAPI 3.1 Spec: \`${baseUrl}/openapi.json\`
 - Health Check: \`${baseUrl}/health\`
 `;
+}
+
+/**
+ * Builds the `/.well-known/x402` manifest indexed by x402scan and autonomous payment crawlers.
+ */
+export function buildWellKnownX402(env: Env, requestUrl?: string): Record<string, unknown> {
+  const baseUrl = resolvePublicBaseUrl(env, requestUrl);
+  return {
+    version: 1,
+    resources: [
+      `${baseUrl}/api/v1/x402/optimize`,
+      `${baseUrl}/api/v1/unlock-plan`,
+    ],
+    instructions:
+      "TaxRail provides autonomous US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH, Aave v3 borrow-vs-sell) and Brazil (Lei 14.754, R$35k rule, Lucro Real 34%, PIS/COFINS, IBS/CBS) crypto and corporate tax optimization. Use POST /api/v1/x402/optimize for 1-step $0.10 USDC optimization, or call free preview endpoints (/api/v1/check-tax-impact, /api/v1/borrow-vs-sell, /api/v1/classify-expense) first and unlock via /api/v1/unlock-plan (10% of verified tax savings). Pass referrerWallet to earn 20% affiliate revshare.",
+  };
 }
 
 /**
@@ -334,6 +353,43 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
               },
             },
             "404": { description: "Plan not found or expired" },
+          },
+        },
+      },
+      "/api/v1/x402/optimize": {
+        post: {
+          operationId: "quickOptimizeX402",
+          summary:
+            "1-step tax optimization returning lots, calldata & accounting dossier ($0.10 USDC via x402)",
+          "x-payment": "x402",
+          "x-x402": {
+            version: 2,
+            scheme: "exact",
+            network,
+            asset,
+            pricingModel: "flat-0.10-usdc",
+            headerNames: ["PAYMENT-SIGNATURE", "X-PAYMENT"],
+          },
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CheckTaxImpactInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Full unlocked tax optimization plan",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/FullTaxOptimizationPlan" },
+                },
+              },
+            },
+            "402": {
+              description: "x402 v2 Payment Required ($0.10 USDC on Base)",
+            },
           },
         },
       },
