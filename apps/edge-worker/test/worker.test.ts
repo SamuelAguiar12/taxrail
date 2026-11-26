@@ -809,9 +809,22 @@ describe("TaxRail Edge Worker", () => {
 
       expect(listRes.status).toBe(200);
       const listJson = (await listRes.json()) as {
-        result?: { tools: Array<{ name: string }> };
+        result?: {
+          tools: Array<{
+            name: string;
+            title?: string;
+            annotations?: {
+              title?: string;
+              readOnlyHint?: boolean;
+              destructiveHint?: boolean;
+              idempotentHint?: boolean;
+              openWorldHint?: boolean;
+            };
+          }>;
+        };
       };
-      const toolNames = listJson.result?.tools.map((t) => t.name) ?? [];
+      const tools = listJson.result?.tools ?? [];
+      const toolNames = tools.map((t) => t.name);
       expect(toolNames).toEqual(
         expect.arrayContaining([
           "check_tax_impact",
@@ -826,6 +839,15 @@ describe("TaxRail Edge Worker", () => {
         ])
       );
       expect(toolNames).toHaveLength(9);
+
+      for (const tool of tools) {
+        expect(typeof tool.title).toBe("string");
+        expect(tool.title?.trim().length).toBeGreaterThan(0);
+        expect(typeof tool.annotations?.title).toBe("string");
+        expect(tool.annotations?.title?.trim().length).toBeGreaterThan(0);
+        expect(typeof tool.annotations?.readOnlyHint).toBe("boolean");
+        expect(tool.annotations?.destructiveHint).toBe(false);
+      }
 
       // New MCP tools enforce x402 402 unpaid and return structured 200 when paid
       const brMcpUnpaid = await app.request(

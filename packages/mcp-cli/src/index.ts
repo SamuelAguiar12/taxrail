@@ -333,10 +333,17 @@ export function createStdioMcpServer(): McpServer {
   server.registerTool(
     "check_tax_impact",
     {
-      title: "Check Crypto Disposal Tax Impact (FREE)",
+      title: "Check Crypto Disposal Tax Impact",
       description:
-        "FREE tax optimization preview for US & Brazil crypto disposals. Returns baseline vs optimized tax, verified savings, dynamic x402 pricing, and planId.",
+        "Free pre-execution tax analysis for US & Brazil crypto disposals. Returns baseline vs optimized tax, verified savings, $0-upfront 10%-from-operation quote, and planId.",
       inputSchema: CheckTaxImpactInputSchema,
+      annotations: {
+        title: "Check Crypto Disposal Tax Impact",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       try {
@@ -357,10 +364,17 @@ export function createStdioMcpServer(): McpServer {
   server.registerTool(
     "compare_borrow_vs_sell",
     {
-      title: "Compare DeFi Borrow vs Sell (FREE)",
+      title: "Compare DeFi Borrow vs Sell",
       description:
-        "FREE preview comparing selling appreciated crypto vs borrowing USDC on Aave v3. Returns after-tax cost comparison, LTV, and planId.",
+        "Free pre-execution comparison between selling appreciated crypto vs borrowing USDC on Aave v3. Returns after-tax cost comparison, LTV, and planId.",
       inputSchema: BorrowVsSellInputSchema,
+      annotations: {
+        title: "Compare DeFi Borrow vs Sell",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async (args) => {
       try {
@@ -381,10 +395,17 @@ export function createStdioMcpServer(): McpServer {
   server.registerTool(
     "classify_deductible_expense",
     {
-      title: "Classify Deductible Business Expense (FREE)",
+      title: "Classify Deductible Business Expense",
       description:
-        "FREE preview classifying business expenses (AI/cloud/SaaS/contractors) for US C-Corp/LLC or Brazil Lucro Real.",
+        "Free pre-payment classification for business expenses (AI, cloud, SaaS, contractors) under US C-Corp/LLC or Brazil Lucro Real.",
       inputSchema: DeductibleExpenseInputSchema,
+      annotations: {
+        title: "Classify Deductible Business Expense",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async (args) => {
       try {
@@ -405,10 +426,17 @@ export function createStdioMcpServer(): McpServer {
   server.registerTool(
     "unlock_tax_plan",
     {
-      title: "Unlock Full Tax Optimization Plan (x402)",
+      title: "Unlock Full Tax Optimization Plan",
       description:
         "Unlocks full execution calldata and accounting dossier for a planId. Uses TAXRAIL_REMOTE_URL with X-PAYMENT / TAXRAIL_DEV_BYPASS if configured, or returns x402 payment instructions.",
       inputSchema: UnlockTaxPlanToolSchema,
+      annotations: {
+        title: "Unlock Full Tax Optimization Plan",
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       const paymentHeader =
@@ -478,21 +506,43 @@ export function createStdioMcpServer(): McpServer {
   );
 
   const ScanWalletTlhSchema = z.object({
-    walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
-    chain: z.enum(["base", "ethereum", "arbitrum"]).optional(),
-    asset: z.string().optional(),
-    jurisdiction: z.enum(["US", "BR"]).optional(),
-    referrerWallet: z.string().optional(),
-    paymentSignature: z.string().optional(),
+    walletAddress: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/)
+      .describe("EVM wallet address (0x...) to scan for year-end TLH and HIFO tax savings"),
+    chain: z
+      .enum(["base", "ethereum", "arbitrum"])
+      .optional()
+      .describe("EVM network to scan (base, ethereum, or arbitrum; defaults to base)"),
+    asset: z.string().optional().describe("Token symbol or ALL (default ALL, scans up to 25 tokens)"),
+    jurisdiction: z
+      .enum(["US", "BR"])
+      .optional()
+      .describe("Tax jurisdiction ruleset (US or BR)"),
+    referrerWallet: z
+      .string()
+      .optional()
+      .describe("Optional EVM affiliate wallet (0x...) to earn 20% revshare on TaxRail's fee"),
+    paymentSignature: z
+      .string()
+      .optional()
+      .describe("x402 v2 PAYMENT-SIGNATURE payload ($0.01 USDC on Base)"),
   });
 
   server.registerTool(
     "scan_wallet_tlh",
     {
-      title: "Scan Wallet for Year-End TLH & Tax Savings ($0.01 x402)",
+      title: "Scan Wallet for Year-End TLH & Tax Savings",
       description:
-        "Scans up to 25 volatile tokens in an EVM wallet (Base/Ethereum/Arbitrum) for year-end TLH and HIFO tax savings ($0.01 USDC x402 on Base).",
+        "Scans up to 25 volatile tokens in an EVM wallet (Base, Ethereum, or Arbitrum) for year-end TLH and HIFO tax savings ($0.01 USDC x402 on Base).",
       inputSchema: ScanWalletTlhSchema,
+      annotations: {
+        title: "Scan Wallet for Year-End TLH & Tax Savings",
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       const qs = new URLSearchParams({
@@ -523,22 +573,44 @@ export function createStdioMcpServer(): McpServer {
   );
 
   const PreTradeCheckSchema = z.object({
-    walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
-    sellAsset: z.string().min(1),
-    sellAmount: z.number().positive(),
-    chain: z.enum(["base", "ethereum", "arbitrum"]).optional(),
-    jurisdiction: z.enum(["US", "BR"]).optional(),
-    referrerWallet: z.string().optional(),
-    paymentSignature: z.string().optional(),
+    walletAddress: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/)
+      .describe("EVM wallet address (0x...) holding the token to sell or swap"),
+    sellAsset: z.string().min(1).describe("Token symbol to sell or swap (e.g. ETH, AERO, WBTC)"),
+    sellAmount: z.number().positive().describe("Decimal token quantity planned for disposal"),
+    chain: z
+      .enum(["base", "ethereum", "arbitrum"])
+      .optional()
+      .describe("EVM network where the swap will execute (base, ethereum, or arbitrum)"),
+    jurisdiction: z
+      .enum(["US", "BR"])
+      .optional()
+      .describe("Tax jurisdiction ruleset (US or BR)"),
+    referrerWallet: z
+      .string()
+      .optional()
+      .describe("Optional EVM affiliate wallet (0x...) to earn 20% revshare on TaxRail's fee"),
+    paymentSignature: z
+      .string()
+      .optional()
+      .describe("x402 v2 PAYMENT-SIGNATURE payload ($0.01 USDC on Base)"),
   });
 
   server.registerTool(
     "pre_trade_check",
     {
-      title: "Pre-Trade Swap/Sell Tax Guardrail ($0.01 x402)",
+      title: "Pre-Trade Swap/Sell Tax Guardrail",
       description:
         "Checks HIFO vs FIFO savings, 366-day US ST->LT cliffs, and Aave v3 borrow-vs-sell before swapping ($0.01 USDC x402 on Base).",
       inputSchema: PreTradeCheckSchema,
+      annotations: {
+        title: "Pre-Trade Swap/Sell Tax Guardrail",
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       const qs = new URLSearchParams({
@@ -570,20 +642,45 @@ export function createStdioMcpServer(): McpServer {
   );
 
   const Br35kStatusSchema = z.object({
-    monthlySalesBrl: z.number().nonnegative().default(0),
-    plannedSaleUsd: z.number().nonnegative().default(1000),
-    custodyLocation: z.enum(["DOMESTIC", "OFFSHORE"]).default("DOMESTIC"),
-    usdBrlRate: z.number().positive().optional(),
-    paymentSignature: z.string().optional(),
+    monthlySalesBrl: z
+      .number()
+      .nonnegative()
+      .default(0)
+      .describe("Total BRL value of crypto disposals already executed in the current calendar month"),
+    plannedSaleUsd: z
+      .number()
+      .nonnegative()
+      .default(1000)
+      .describe("USD value of the next planned crypto sale or swap"),
+    custodyLocation: z
+      .enum(["DOMESTIC", "OFFSHORE"])
+      .default("DOMESTIC")
+      .describe("DOMESTIC (Brazilian exchange) or OFFSHORE (self-custody, DEX, or foreign exchange)"),
+    usdBrlRate: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Optional USD/BRL exchange rate override"),
+    paymentSignature: z
+      .string()
+      .optional()
+      .describe("x402 v2 PAYMENT-SIGNATURE payload ($0.005 USDC on Base)"),
   });
 
   server.registerTool(
     "check_br_35k_status",
     {
-      title: "Brazil R$35k Exemption & Lei 14.754 Check ($0.005 x402)",
+      title: "Brazil R$35k Exemption & Lei 14.754 Check",
       description:
         "Calculates remaining R$35k monthly domestic exemption vs Lei 14.754 15% flat tax and max safe USD sale size ($0.005 USDC x402 on Base).",
       inputSchema: Br35kStatusSchema,
+      annotations: {
+        title: "Brazil R$35k Exemption & Lei 14.754 Check",
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       const qs = new URLSearchParams({
@@ -615,10 +712,17 @@ export function createStdioMcpServer(): McpServer {
   server.registerTool(
     "prepare_execution",
     {
-      title: "Prepare $0-Upfront 1-Click Execution (Pay 10% From Operation)",
+      title: "Prepare $0-Upfront 1-Click Execution",
       description:
-        "FREE pre-execution step: returns ready-to-sign 0x v2 / Jupiter swap calldata or Aave v3 atomic borrow batch with TaxRail's exact 10% verified-savings fee embedded inside the operation ($0 upfront). Broadcast the tx and call `claim_dossier` to unlock SpecID lots & CSV.",
+        "Free pre-execution step: returns ready-to-sign 0x v2 / Jupiter swap calldata or Aave v3 atomic borrow batch with TaxRail's exact 10% verified-savings fee embedded inside the operation ($0 upfront). Broadcast the tx and call claim_dossier to unlock SpecID lots & CSV.",
       inputSchema: PrepareExecutionInputSchema,
+      annotations: {
+        title: "Prepare $0-Upfront 1-Click Execution",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       const remote = getRemoteBaseUrl() || getApiBaseUrl();
@@ -710,7 +814,10 @@ export function createStdioMcpServer(): McpServer {
   );
 
   const ClaimDossierToolSchema = ClaimDossierInputSchema.extend({
-    paymentSignature: z.string().optional(),
+    paymentSignature: z
+      .string()
+      .optional()
+      .describe("Optional dev-bypass token for automated testing"),
   });
 
   server.registerTool(
@@ -720,6 +827,13 @@ export function createStdioMcpServer(): McpServer {
       description:
         "Verifies the settled swap or Aave borrow txHash on-chain and unlocks SpecID selectedLots + Form 8949 / Brazil DeCripto CSV.",
       inputSchema: ClaimDossierToolSchema,
+      annotations: {
+        title: "Claim Tax Dossier After On-Chain Execution",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       const paymentHeader =

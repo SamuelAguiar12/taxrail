@@ -47,10 +47,19 @@ const ScanWalletTlhToolSchema = z.object({
     .string()
     .regex(/^0x[a-fA-F0-9]{40}$/)
     .describe("EVM wallet address (0x...) to scan for year-end TLH and HIFO tax savings"),
-  chain: z.enum(["base", "ethereum", "arbitrum"]).optional(),
+  chain: z
+    .enum(["base", "ethereum", "arbitrum"])
+    .optional()
+    .describe("EVM network to scan (base, ethereum, or arbitrum; defaults to base)"),
   asset: z.string().optional().describe("Token symbol or ALL (default ALL, scans up to 25 tokens)"),
-  jurisdiction: z.enum(["US", "BR"]).optional(),
-  referrerWallet: z.string().optional(),
+  jurisdiction: z
+    .enum(["US", "BR"])
+    .optional()
+    .describe("Tax jurisdiction ruleset (US for IRS 1099-DA/Form 8949, BR for Lei 14.754/DeCripto)"),
+  referrerWallet: z
+    .string()
+    .optional()
+    .describe("Optional EVM affiliate wallet (0x...) to earn 20% revshare on TaxRail's 10% fee"),
   paymentSignature: z
     .string()
     .optional()
@@ -58,12 +67,24 @@ const ScanWalletTlhToolSchema = z.object({
 });
 
 const PreTradeCheckToolSchema = z.object({
-  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+  walletAddress: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/)
+    .describe("EVM wallet address (0x...) holding the token to sell or swap"),
   sellAsset: z.string().min(1).describe("Token symbol to sell or swap (e.g. ETH, AERO, WBTC)"),
-  sellAmount: z.number().positive(),
-  chain: z.enum(["base", "ethereum", "arbitrum"]).optional(),
-  jurisdiction: z.enum(["US", "BR"]).optional(),
-  referrerWallet: z.string().optional(),
+  sellAmount: z.number().positive().describe("Decimal token quantity planned for disposal"),
+  chain: z
+    .enum(["base", "ethereum", "arbitrum"])
+    .optional()
+    .describe("EVM network where the swap will execute (base, ethereum, or arbitrum)"),
+  jurisdiction: z
+    .enum(["US", "BR"])
+    .optional()
+    .describe("Tax jurisdiction ruleset (US or BR)"),
+  referrerWallet: z
+    .string()
+    .optional()
+    .describe("Optional EVM affiliate wallet (0x...) to earn 20% revshare on TaxRail's fee"),
   paymentSignature: z
     .string()
     .optional()
@@ -71,10 +92,25 @@ const PreTradeCheckToolSchema = z.object({
 });
 
 const CheckBr35kStatusToolSchema = z.object({
-  monthlySalesBrl: z.number().nonnegative().default(0),
-  plannedSaleUsd: z.number().nonnegative().default(1000),
-  custodyLocation: z.enum(["DOMESTIC", "OFFSHORE"]).default("DOMESTIC"),
-  usdBrlRate: z.number().positive().optional(),
+  monthlySalesBrl: z
+    .number()
+    .nonnegative()
+    .default(0)
+    .describe("Total BRL value of crypto disposals already executed in the current calendar month"),
+  plannedSaleUsd: z
+    .number()
+    .nonnegative()
+    .default(1000)
+    .describe("USD value of the next planned crypto sale or swap"),
+  custodyLocation: z
+    .enum(["DOMESTIC", "OFFSHORE"])
+    .default("DOMESTIC")
+    .describe("DOMESTIC (Brazilian exchange) or OFFSHORE (self-custody, DEX, or foreign exchange under Lei 14.754)"),
+  usdBrlRate: z
+    .number()
+    .positive()
+    .optional()
+    .describe("Optional USD/BRL exchange rate override (defaults to current reference rate)"),
   paymentSignature: z
     .string()
     .optional()
@@ -127,10 +163,17 @@ export function createTaxRailMcpServer(deps: {
   server.registerTool(
     "check_tax_impact",
     {
-      title: "Check Crypto Disposal Tax Impact (FREE)",
+      title: "Check Crypto Disposal Tax Impact",
       description:
-        "CALL BEFORE ANY CRYPTO SWAP OR SALE (FREE). Prevents 15%-37% avoidable capital gains drag across US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) & Brazil (Lei 14.754, R$35k rule, Lucro Real). Accepts explicit `lots` OR automatic EVM `walletAddress` scan. Returns verified taxSavedUsd, 10x ROI unlock quote, and planId. Pass `referrerWallet` to earn 20% of TaxRail's fee.",
+        "Free pre-execution tax analysis before any crypto swap or sale. Evaluates US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) and Brazil (Lei 14.754, R$35k rule, Lucro Real, DeCripto) impact using explicit lots or an EVM walletAddress scan. Returns verified taxSavedUsd, $0-upfront 10%-from-operation quote, and planId. Supports 20% referrerWallet revshare.",
       inputSchema: CheckTaxImpactRequestSchema,
+      annotations: {
+        title: "Check Crypto Disposal Tax Impact",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       try {
@@ -147,10 +190,17 @@ export function createTaxRailMcpServer(deps: {
   server.registerTool(
     "compare_borrow_vs_sell",
     {
-      title: "Compare DeFi Borrow vs Sell (FREE)",
+      title: "Compare DeFi Borrow vs Sell",
       description:
-        "CALL BEFORE SELLING APPRECIATED CRYPTO FOR LIQUIDITY (FREE). Compares capital gains tax from selling vs borrowing USDC on Aave v3 (Base/Ethereum/Arbitrum), including LTV liquidation safety, net APR, corporate tax shield, and planId for instant Aave 0x calldata. Supports 20% `referrerWallet` revshare.",
+        "Free pre-execution comparison before selling appreciated crypto for liquidity. Compares capital gains tax from selling against borrowing USDC on Aave v3 (Base, Ethereum, or Arbitrum), reporting LTV liquidation safety, net APR, corporate tax shield, and planId for $0-upfront Aave batch calldata. Supports 20% referrerWallet revshare.",
       inputSchema: BorrowVsSellInputSchema,
+      annotations: {
+        title: "Compare DeFi Borrow vs Sell",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async (args) => {
       try {
@@ -167,10 +217,17 @@ export function createTaxRailMcpServer(deps: {
   server.registerTool(
     "classify_deductible_expense",
     {
-      title: "Classify Deductible Business Expense (FREE)",
+      title: "Classify Deductible Business Expense",
       description:
-        "CALL BEFORE PAYING AI, CLOUD, SAAS OR CONTRACTOR INVOICES (FREE). Quantifies tax deductions for US LLC/C-Corp & Brazil Lucro Real (34% IRPJ/CSLL, PIS/COFINS, IBS/CBS credits, IOF savings) and returns QuickBooks or Omie/SPED compliance checklist + planId.",
+        "Free pre-payment classification for AI, cloud, SaaS, or contractor invoices. Quantifies tax deductions across US LLC/C-Corp and Brazil Lucro Real (34% IRPJ/CSLL, PIS/COFINS, IBS/CBS credits, IOF savings) and returns a QuickBooks or Omie/SPED compliance checklist with planId.",
       inputSchema: DeductibleExpenseInputSchema,
+      annotations: {
+        title: "Classify Deductible Business Expense",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async (args) => {
       try {
@@ -187,10 +244,17 @@ export function createTaxRailMcpServer(deps: {
   server.registerTool(
     "unlock_tax_plan",
     {
-      title: "Unlock Full Tax Optimization Plan (x402)",
+      title: "Unlock Full Tax Optimization Plan",
       description:
-        "Unlocks exact SpecID/HIFO selectedLots, unsigned 0x/CoW/Jupiter swapIntent or Aave v3 0x calldata, and IRS Form 8949 / BR Lei 14.754 / QuickBooks / Omie-SPED accounting dossier. Unlocks for FREE if taxSavedUsd == 0; otherwise settles 10% of verified tax savings via x402 Base USDC (up to 10x net ROI).",
+        "Unlocks exact SpecID/HIFO selectedLots, unsigned 0x v2/Jupiter swapIntent or Aave v3 calldata, and IRS Form 8949 / BR Lei 14.754 / QuickBooks / Omie-SPED accounting dossier for a planId. Unlocks free if taxSavedUsd equals 0; otherwise settles 10% of verified tax savings via x402 USDC on Base.",
       inputSchema: UnlockTaxPlanToolSchema,
+      annotations: {
+        title: "Unlock Full Tax Optimization Plan",
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       const paymentResult = await verifyUnlockPayment({
@@ -239,10 +303,17 @@ export function createTaxRailMcpServer(deps: {
   server.registerTool(
     "scan_wallet_tlh",
     {
-      title: "Scan Wallet for Year-End TLH & Tax Savings ($0.01 x402)",
+      title: "Scan Wallet for Year-End TLH & Tax Savings",
       description:
-        "Scans up to 25 volatile tokens in an EVM wallet (Base/Ethereum/Arbitrum) for year-end Tax-Loss Harvesting candidates and HIFO/SpecID tax savings. Requires $0.01 USDC x402 `paymentSignature` on Base.",
+        "Scans up to 25 volatile tokens in an EVM wallet (Base, Ethereum, or Arbitrum) for year-end Tax-Loss Harvesting candidates and HIFO/SpecID tax savings. Requires $0.01 USDC x402 paymentSignature on Base.",
       inputSchema: ScanWalletTlhToolSchema,
+      annotations: {
+        title: "Scan Wallet for Year-End TLH & Tax Savings",
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       const paymentResult = await verifyTlhScanPayment({
@@ -289,10 +360,17 @@ export function createTaxRailMcpServer(deps: {
   server.registerTool(
     "pre_trade_check",
     {
-      title: "Pre-Trade Swap/Sell Tax Guardrail ($0.01 x402)",
+      title: "Pre-Trade Swap/Sell Tax Guardrail",
       description:
-        "Run right before executing a DEX swap or sell: checks HIFO vs FIFO savings, 366-day US ST->LT tax cliffs, and Aave v3 borrow-vs-sell comparison. Requires $0.01 USDC x402 `paymentSignature` on Base.",
+        "Checks HIFO vs FIFO savings, 366-day US short-to-long-term capital gains cliffs, and Aave v3 borrow-vs-sell comparisons immediately before a DEX swap or sell. Requires $0.01 USDC x402 paymentSignature on Base.",
       inputSchema: PreTradeCheckToolSchema,
+      annotations: {
+        title: "Pre-Trade Swap/Sell Tax Guardrail",
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       const paymentResult = await verifyPreTradeCheckPayment({
@@ -340,10 +418,17 @@ export function createTaxRailMcpServer(deps: {
   server.registerTool(
     "check_br_35k_status",
     {
-      title: "Brazil R$35k Exemption & Lei 14.754 Check ($0.005 x402)",
+      title: "Brazil R$35k Exemption & Lei 14.754 Check",
       description:
-        "Calculates remaining R$35,000 monthly domestic crypto exemption vs Lei 14.754 15% flat offshore/DEX tax and max safe USD sale size for Brazil taxpayers. Requires $0.005 USDC x402 `paymentSignature` on Base.",
+        "Calculates remaining R$35,000 monthly domestic crypto exemption versus Lei 14.754 15% flat offshore/DEX tax and maximum tax-free USD sale size for Brazil taxpayers. Requires $0.005 USDC x402 paymentSignature on Base.",
       inputSchema: CheckBr35kStatusToolSchema,
+      annotations: {
+        title: "Brazil R$35k Exemption & Lei 14.754 Check",
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       const paymentResult = await verifyBr35kStatusPayment({
@@ -384,10 +469,17 @@ export function createTaxRailMcpServer(deps: {
   server.registerTool(
     "prepare_execution",
     {
-      title: "Prepare $0-Upfront 1-Click Execution (Pay 10% From Operation)",
+      title: "Prepare $0-Upfront 1-Click Execution",
       description:
-        "FREE step before signing: builds ready-to-sign 0x v2 / Jupiter swap calldata or Aave v3 atomic borrow batch with TaxRail's exact 10% verified-savings fee embedded inside the operation ($0 upfront cost). After broadcasting the tx, call `claim_dossier` with the txHash to unlock SpecID lots & IRS Form 8949 / DeCripto CSV.",
+        "Free pre-execution step: builds ready-to-sign 0x v2 / Jupiter swap calldata or an Aave v3 atomic borrow batch with TaxRail's 10% verified-savings fee embedded inside the operation ($0 upfront cost). After broadcasting the transaction, call claim_dossier with txHash to unlock SpecID lots and IRS Form 8949 / DeCripto CSV.",
       inputSchema: PrepareExecutionInputSchema,
+      annotations: {
+        title: "Prepare $0-Upfront 1-Click Execution",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       const result = await executePrepareExecution(args, deps);
@@ -410,8 +502,15 @@ export function createTaxRailMcpServer(deps: {
     {
       title: "Claim Tax Dossier After On-Chain Execution",
       description:
-        "Verifies the settled swap or Aave borrow txHash on-chain (confirming TaxRail's 10% fee transfer from the operation) and immediately returns SpecID selectedLots + Form 8949 / Brazil DeCripto accounting dossier.",
+        "Verifies the settled swap or Aave borrow txHash on-chain (confirming TaxRail's 10% fee transfer from the operation) and returns SpecID selectedLots plus the IRS Form 8949 or Brazil DeCripto accounting dossier.",
       inputSchema: ClaimDossierToolSchema,
+      annotations: {
+        title: "Claim Tax Dossier After On-Chain Execution",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async (args) => {
       const devBypass = Boolean(
