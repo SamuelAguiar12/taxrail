@@ -165,11 +165,14 @@ Pass \`referrerWallet\` (e.g., \`"0xYourAgentWallet"\`) in any Step 1 request to
 
 - **Portable Agent Skill (\`SKILL.md\`):** \`${baseUrl}/SKILL.md\`
 - **MCP Streamable HTTP:** \`${baseUrl}/mcp\` (\`npx -y taxrail-mcp\`)
-- **Agent SDK (\`taxrail-agent-tools\`):** \`npm install taxrail-agent-tools\`
+- **TypeScript Agent SDK:** \`npm install taxrail-agent-tools\`
+- **Python Agent SDK (Zero-Deps + LangChain/CrewAI):** \`pip install taxrail\`
 - **A2A Agent Card:** \`${baseUrl}/.well-known/agent.json\`
 - **x402 Discovery Manifest:** \`${baseUrl}/.well-known/x402\`
 - **OpenAPI 3.1 Spec:** \`${baseUrl}/openapi.json\`
 - **$0.01 Wallet TLH Scanner (1-param GET):** \`GET ${baseUrl}/api/v1/x402/tlh-scan?walletAddress=0x...&chain=base\`
+- **$0.01 Pre-Trade Swap/Sell Guardrail:** \`GET ${baseUrl}/api/v1/x402/pre-trade-check?walletAddress=0x...&sellAsset=ETH&sellAmount=1\`
+- **$0.005 Brazil R$35k & Lei 14.754 Check:** \`GET ${baseUrl}/api/v1/x402/br-35k-status?monthlySalesBrl=20000&plannedSaleUsd=2500&custodyLocation=DOMESTIC\`
 - **1-Step Paid Optimize ($0.10 USDC):** \`POST ${baseUrl}/api/v1/x402/optimize\`
 - **Agent Feedback (FREE):** \`POST ${baseUrl}/api/v1/feedback\`
 - **Verified Reputation (FREE):** \`GET ${baseUrl}/api/v1/reputation\`
@@ -180,6 +183,12 @@ Pass \`referrerWallet\` (e.g., \`"0xYourAgentWallet"\`) in any Step 1 request to
 \`\`\`bash
 # $0.01 instant multi-asset wallet TLH & tax-risk scan (x402 Base USDC)
 curl -i "${baseUrl}/api/v1/x402/tlh-scan?walletAddress=0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1&chain=base&asset=ALL"
+
+# $0.01 pre-trade swap/sell guardrail check (HIFO vs FIFO, ST->LT cliff, Aave borrow-vs-sell)
+curl -i "${baseUrl}/api/v1/x402/pre-trade-check?walletAddress=0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1&sellAsset=ETH&sellAmount=1&chain=base"
+
+# $0.005 Brazil R$35k monthly exemption & Lei 14.754 compliance check
+curl -i "${baseUrl}/api/v1/x402/br-35k-status?monthlySalesBrl=20000&plannedSaleUsd=2500&custodyLocation=DOMESTIC"
 
 # FREE tax-impact preview -> get planId & exact ROI quote
 curl -X POST "${baseUrl}/api/v1/check-tax-impact" -H "Content-Type: application/json" \\
@@ -198,11 +207,12 @@ export function buildSkillMd(env: Env, requestUrl?: string): string {
   return `---
 name: taxrail-crypto-tax
 version: 0.1.0
-description: Pre-execution US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) & Brazil (Lei 14.754, R$35k rule, Lucro Real) crypto tax optimization, $0.01 wallet TLH scanner, Aave v3 borrow-vs-sell, and 0x/CoW/Jupiter calldata via MCP and x402 Base USDC.
+description: Pre-execution US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) & Brazil (Lei 14.754, R$35k rule, Lucro Real) crypto tax optimization, $0.01 wallet TLH scanner & pre-trade check, $0.005 BR 35k check, Aave v3 borrow-vs-sell, and 0x/CoW/Jupiter calldata via MCP and x402 Base USDC.
 author: SamuelAguiar12
 homepage: ${baseUrl}
 tags: [crypto-tax, defi, x402, base, usdc, irs-1099-da, tax-loss-harvesting, brazil-lei-14754, aave-v3, wallet-scanner]
 compatibility: [claude-code, codex, openclaw, cursor, windsurf]
+metadata: {"openclaw":{"emoji":"🧾","homepage":"${baseUrl}","primaryEnv":"TAXRAIL_BASE_URL"}}
 ---
 
 # TaxRail — Autonomous Pre-Trade Tax & DeFi Optimization
@@ -212,14 +222,18 @@ Use TaxRail **before** executing any crypto swap, rebalancing a portfolio, selli
 ## When to Trigger This Skill
 
 1. **Wallet Year-End TLH & Tax Risk Audit ($0.01 USDC, 1 parameter):**
-   Call \`GET ${baseUrl}/api/v1/x402/tlh-scan?walletAddress=<0x...>&chain=base&asset=ETH&jurisdiction=US\` via x402 Base USDC (\`eip155:8453\`). Returns unrealized PnL, year-end Tax-Loss Harvesting candidates, IRS 1099-DA / Brazil Lei 14.754 rules, and an unlockable \`planId\`.
-2. **Pre-Trade Swap / Disposal Simulation (FREE Step 1):**
+   Call \`GET ${baseUrl}/api/v1/x402/tlh-scan?walletAddress=<0x...>&chain=base&asset=ALL&jurisdiction=US\` via x402 Base USDC (\`eip155:8453\`). Returns unrealized PnL, year-end Tax-Loss Harvesting candidates, IRS 1099-DA / Brazil Lei 14.754 rules, and unlockable \`planId\`s.
+2. **Pre-Trade Swap / Sell Guardrail ($0.01 USDC):**
+   Call \`GET ${baseUrl}/api/v1/x402/pre-trade-check?walletAddress=<0x...>&sellAsset=ETH&sellAmount=1&chain=base&jurisdiction=US\` before submitting any DEX swap to check HIFO savings, Short-Term -> Long-Term cliffs, and Aave v3 borrow-vs-sell.
+3. **Brazil R$35k Exemption & Lei 14.754 Check ($0.005 USDC):**
+   Call \`GET ${baseUrl}/api/v1/x402/br-35k-status?monthlySalesBrl=20000&plannedSaleUsd=2500&custodyLocation=DOMESTIC\` for instant BRL tax-free headroom calculation.
+4. **Pre-Trade Swap / Disposal Simulation (FREE Step 1):**
    Call \`POST ${baseUrl}/api/v1/check-tax-impact\` (or MCP tool \`check_tax_impact\`) with either explicit \`lots\` or \`walletAddress\`. Returns \`baselineTaxUsd\`, \`optimizedTaxUsd\`, \`taxSavedUsd\`, \`agentGuidance\`, and \`planId\`.
-3. **Liquidity Without Selling (FREE Step 1):**
+5. **Liquidity Without Selling (FREE Step 1):**
    Call \`POST ${baseUrl}/api/v1/borrow-vs-sell\` (or MCP \`compare_borrow_vs_sell\`) to test if borrowing USDC on Aave v3 beats selling appreciated crypto after taxes.
-4. **Full 1-Step Execution + Accounting Dossier ($0.10 USDC):**
+6. **Full 1-Step Execution + Accounting Dossier ($0.10 USDC):**
    Call \`POST ${baseUrl}/api/v1/x402/optimize\` via x402 Base USDC to receive exact SpecID/HIFO lots, unsigned \`0x v2\` / \`CoW Swap\` / \`Jupiter\` calldata, and Form 8949 / Lei 14.754 CSV exports in one request.
-5. **Unlock Any Step-1 \`planId\` (Dynamic 10% Success Fee, $0 if $0 saved):**
+7. **Unlock Any Step-1 \`planId\` (Dynamic 10% Success Fee, $0 if $0 saved):**
    Call \`POST ${baseUrl}/api/v1/unlock-plan\` (or MCP \`unlock_tax_plan\`) with \`{ "planId": "..." }\`.
 
 ## Earn 20% Automatic Affiliate Revenue Share
@@ -231,6 +245,7 @@ Always include \`referrerWallet\` (query parameter or JSON field) or \`X-TaxRail
 - **MCP (Streamable HTTP):** \`${baseUrl}/mcp\`
 - **MCP (npx stdio):** \`npx -y taxrail-mcp\`
 - **TypeScript / AgentKit / LangChain SDK:** \`npm install taxrail-agent-tools\`
+- **Python SDK (LangChain / CrewAI / OpenAI):** \`pip install taxrail\`
 - **OpenAPI 3.1 Spec:** \`${baseUrl}/openapi.json\`
 - **x402 Discovery Manifest:** \`${baseUrl}/.well-known/x402\`
 - **Submit Agent Feedback (FREE):** \`POST ${baseUrl}/api/v1/feedback\` (include \`planId\` or \`settlementTx\` for verified-payer badge)
@@ -247,11 +262,13 @@ export function buildWellKnownX402(env: Env, requestUrl?: string): Record<string
     version: 1,
     resources: [
       `${baseUrl}/api/v1/x402/tlh-scan`,
+      `${baseUrl}/api/v1/x402/pre-trade-check`,
+      `${baseUrl}/api/v1/x402/br-35k-status`,
       `${baseUrl}/api/v1/x402/optimize`,
       `${baseUrl}/api/v1/unlock-plan`,
     ],
     instructions:
-      "TaxRail provides autonomous US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH, Aave v3 borrow-vs-sell) and Brazil (Lei 14.754, R$35k rule, Lucro Real 34%, PIS/COFINS, IBS/CBS) crypto & corporate tax optimization. Start with 1-parameter GET /api/v1/x402/tlh-scan ($0.01 USDC) for instant wallet TLH discovery, POST /api/v1/x402/optimize ($0.10 USDC) for 1-step full execution calldata + Form 8949/Lei 14.754 dossier, or call free preview endpoints first and unlock via /api/v1/unlock-plan (10% of verified tax savings). Pass referrerWallet to earn 20% affiliate revshare.",
+      "TaxRail provides autonomous US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH, Aave v3 borrow-vs-sell) and Brazil (Lei 14.754, R$35k rule, Lucro Real 34%, PIS/COFINS, IBS/CBS) crypto & corporate tax optimization. Micro-endpoints: GET /api/v1/x402/tlh-scan ($0.01 USDC) for wallet TLH discovery, GET /api/v1/x402/pre-trade-check ($0.01 USDC) for pre-swap HIFO/cliff/borrow guardrails, GET /api/v1/x402/br-35k-status ($0.005 USDC) for Brazil R$35k headroom, POST /api/v1/x402/optimize ($0.10 USDC) for 1-step full calldata + Form 8949/Lei 14.754 dossier, or unlock any free Step-1 preview via /api/v1/unlock-plan (10% of verified savings). Pass referrerWallet to earn 20% affiliate revshare.",
   };
 }
 
@@ -553,6 +570,44 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
             "402": {
               description: "x402 v2 Payment Required ($0.10 USDC on Base)",
             },
+          },
+        },
+      },
+      "/api/v1/x402/pre-trade-check": {
+        get: {
+          tags: ["x402", "defi", "crypto-tax", "base", "aave-v3"],
+          operationId: "preTradeCheck",
+          summary: "Pre-trade swap/sell tax guardrail check ($0.01 USDC via x402 on Base)",
+          "x-payment": "x402",
+          parameters: [
+            { name: "walletAddress", in: "query", required: true, schema: { type: "string" } },
+            { name: "sellAsset", in: "query", required: true, schema: { type: "string" } },
+            { name: "sellAmount", in: "query", required: true, schema: { type: "string" } },
+            { name: "chain", in: "query", required: false, schema: { type: "string", enum: ["base", "ethereum", "arbitrum"] } },
+            { name: "jurisdiction", in: "query", required: false, schema: { type: "string", enum: ["US", "BR"] } },
+            { name: "referrerWallet", in: "query", required: false, schema: { type: "string" } },
+          ],
+          responses: {
+            "200": { description: "Pre-trade recommendation, HIFO savings, cliff alert, and unlockable planId" },
+            "402": { description: "x402 v2 Payment Required ($0.01 USDC on Base)" },
+          },
+        },
+      },
+      "/api/v1/x402/br-35k-status": {
+        get: {
+          tags: ["x402", "brazil-lei-14754", "crypto-tax"],
+          operationId: "getBr35kStatus",
+          summary: "Brazil R$35k monthly exemption & Lei 14.754 status check ($0.005 USDC via x402 on Base)",
+          "x-payment": "x402",
+          parameters: [
+            { name: "monthlySalesBrl", in: "query", required: false, schema: { type: "string" } },
+            { name: "plannedSaleUsd", in: "query", required: false, schema: { type: "string" } },
+            { name: "custodyLocation", in: "query", required: false, schema: { type: "string", enum: ["DOMESTIC", "OFFSHORE"] } },
+            { name: "usdBrlRate", in: "query", required: false, schema: { type: "string" } },
+          ],
+          responses: {
+            "200": { description: "Brazil R$35k exempt headroom & Lei 14.754 tax calculation" },
+            "402": { description: "x402 v2 Payment Required ($0.005 USDC on Base)" },
           },
         },
       },

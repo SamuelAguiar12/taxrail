@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taxrail"
+version = "0.1.0"
+description = "Autonomous pre-execution crypto & DeFi tax optimization SDK for AI agents (US IRS 1099-DA, Form 8949, HIFO/SpecID, TLH, Aave v3 borrow-vs-sell & Brazil Lei 14.754 / R$35k rule) via x402 Base USDC."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [
+  { name = "TaxRail", email = "samuelaguiar1242@gmail.com" },
+]
+keywords = [
+  "crypto-tax",
+  "ai-agents",
+  "x402",
+  "defi",
+  "mcp",
+  "base",
+  "usdc",
+  "tax-loss-harvesting",
+  "irs-1099-da",
+  "lei-14754",
+  "langchain",
+  "crewai",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Office/Business :: Financial :: Accounting",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []
+
+[project.optional-dependencies]
+langchain = ["langchain-core>=0.2.0"]
+crewai = ["crewai>=0.41.0"]
+
+[project.urls]
+Homepage = "https://taxrail.online"
+API = "https://api.taxrail.online/openapi.json"
+Skill = "https://api.taxrail.online/SKILL.md"
+Repository = "https://github.com/SamuelAguiar12/taxrail"
+
+[tool.setuptools.packages.find]
+include = ["taxrail*"]

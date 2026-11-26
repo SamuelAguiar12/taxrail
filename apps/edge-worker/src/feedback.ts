@@ -25,7 +25,12 @@ export const FeedbackInputSchema = z.object({
 });
 
 export type FeedbackInput = z.infer<typeof FeedbackInputSchema>;
-export type PaymentTier = "10PCT_UNLOCK" | "QUICK_OPTIMIZE" | "TLH_SCAN";
+export type PaymentTier =
+  | "10PCT_UNLOCK"
+  | "QUICK_OPTIMIZE"
+  | "TLH_SCAN"
+  | "PRE_TRADE_CHECK"
+  | "BR_35K_STATUS";
 
 export interface PaidReceiptRecord {
   txHash: string;

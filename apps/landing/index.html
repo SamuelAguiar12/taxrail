@@ -4,9 +4,37 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TaxRail — Autonomous Tax-Optimization Rail for AI Agents (US + Brazil)</title>
-  <meta name="description" content="First pre-execution MCP x x402 tax router for AI agents across US (IRS 1099-DA, HIFO/SpecID, TLH) and Brazil (Lei 14.754, Lucro Real, IBS/CBS). $0.01 25-token wallet TLH scan, $0.10 1-step optimize, free previews & verified reputation." />
+  <meta name="description" content="First pre-execution MCP x x402 tax router for AI agents across US (IRS 1099-DA, HIFO/SpecID, TLH) and Brazil (Lei 14.754, R$35k rule, Lucro Real, IBS/CBS). $0.01 pre-trade check & 25-token TLH scan, $0.005 BR 35k check, pip install taxrail, free previews & verified reputation." />
+  <link rel="canonical" href="https://taxrail.online/" />
   <link rel="icon" type="image/svg+xml" href="https://api.taxrail.online/favicon.ico" />
   <link rel="preconnect" href="https://api.taxrail.online" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "TaxRail",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Cross-platform",
+        "url": "https://taxrail.online",
+        "softwareVersion": "0.1.0",
+        "description": "Autonomous pre-execution crypto & DeFi tax optimization API, MCP server, and x402 Base USDC rail for US (IRS 1099-DA, SpecID/HIFO, TLH, Aave v3 borrow-vs-sell) and Brazil (Lei 14.754, R$35k exemption, Lucro Real).",
+        "offers": {
+          "@type": "Offer",
+          "price": "0.005",
+          "priceCurrency": "USD"
+        }
+      },
+      {
+        "@type": "WebAPI",
+        "name": "TaxRail Edge API & MCP",
+        "url": "https://api.taxrail.online",
+        "documentation": "https://api.taxrail.online/openapi.json"
+      }
+    ]
+  }
+  </script>
   <style>
     :root {
       --bg: #070b12;
@@ -192,6 +220,13 @@
           </div>
           <button class="btn" onclick="copyText('npm install taxrail-agent-tools', this)">Copy</button>
         </div>
+        <div class="copy-box">
+          <div>
+            <span class="copy-label">Python AI Agent SDK (LangChain / CrewAI / OpenAI)</span>
+            <span class="copy-val">pip install taxrail</span>
+          </div>
+          <button class="btn" onclick="copyText('pip install taxrail', this)">Copy</button>
+        </div>
       </div>
     </section>
 
@@ -199,6 +234,16 @@
       <h2 class="section-title">A2A Endpoints &amp; Agentic Funnel</h2>
       <p class="section-sub">Settled natively via Coinbase CDP &amp; PayAI x402 v2 facilitators on Base mainnet USDC—or install our portable <a href="https://api.taxrail.online/SKILL.md" target="_blank">SKILL.md</a> into Claude Code, Codex, OpenClaw, or Cursor.</p>
       <div class="cards">
+        <div class="card">
+          <span class="tag micro">$0.01 x402 · /api/v1/x402/pre-trade-check</span>
+          <h3>Pre-Trade Swap Guardrail</h3>
+          <p>Run before any DEX swap or sell: checks HIFO vs. FIFO tax savings, flags 366-day US Short-Term → Long-Term cliffs, and compares Aave v3 borrow-vs-sell in one call.</p>
+        </div>
+        <div class="card">
+          <span class="tag micro">$0.005 x402 · /api/v1/x402/br-35k-status</span>
+          <h3>Brazil R$35k &amp; Lei 14.754 Check</h3>
+          <p>Calculates exact remaining BRL monthly tax-free headroom for domestic custody vs. Lei 14.754 flat 15% offshore/DEX tax and max safe USD sale size.</p>
+        </div>
         <div class="card">
           <span class="tag micro">$0.01 x402 · /api/v1/x402/tlh-scan</span>
           <h3>25-Token Portfolio TLH Scan</h3>
@@ -295,6 +340,8 @@
         <a href="https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail" target="_blank">Glama Connector</a>
         <a href="https://www.npmjs.com/package/taxrail-mcp" target="_blank">npm (taxrail-mcp)</a>
         <a href="https://www.npmjs.com/package/taxrail-agent-tools" target="_blank">npm (taxrail-agent-tools)</a>
+        <a href="/guides/base-agent-crypto-tax.html">US Base Tax Guide</a>
+        <a href="/guides/brazil-lei-14754-ai-agent.html">Brazil Lei 14.754 Guide</a>
         <a href="https://github.com/SamuelAguiar12/taxrail" target="_blank">GitHub</a>
       </div>
       <div>

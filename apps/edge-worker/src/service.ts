@@ -11,6 +11,7 @@ import type {
   AssetTlhSummary,
   BorrowVsSellInput,
   BorrowVsSellPreview,
+  Br35kStatusResult,
   CheckTaxImpactInput,
   CheckTaxImpactRedactedResponse,
   CheckTaxImpactRequest,
@@ -18,7 +19,9 @@ import type {
   DeductibleExpensePreview,
   FullTaxOptimizationPlan,
   Jurisdiction,
+  PreTradeCheckResult,
   SwapIntentPayload,
+  TaxLot,
   TaxRegime,
   WalletTlhScanResult,
 } from "@taxrail/shared";
@@ -641,5 +644,335 @@ export async function executeWalletTlhScan(
     },
     disclaimer:
       "Deterministic software calculation for tax planning, not legal or CPA advice.",
+  };
+}
+
+/**
+ * Executes the $0.01 USDC pre-trade swap/sell guardrail check (`GET|POST /api/v1/x402/pre-trade-check`).
+ * Reconstructs wallet lots (when not explicitly provided), computes HIFO vs FIFO tax savings,
+ * flags imminent Short-Term -> Long-Term tax cliffs, and compares Aave v3 borrow-vs-sell.
+ */
+export async function executePreTradeCheck(
+  params: {
+    walletAddress: string;
+    sellAsset: string;
+    sellAmount: number;
+    chain?: "base" | "ethereum" | "arbitrum";
+    jurisdiction?: Jurisdiction;
+    regime?: TaxRegime;
+    referrerWallet?: string;
+    currentPriceUsd?: number;
+    lots?: TaxLot[];
+  },
+  deps: TaxRailServiceDeps
+): Promise<PreTradeCheckResult> {
+  const chain = params.chain ?? "base";
+  const jurisdiction: Jurisdiction = params.jurisdiction ?? "US";
+  const regime: TaxRegime =
+    params.regime ?? (jurisdiction === "BR" ? "PF_LEI_14754" : "INDIVIDUAL");
+  const sellAsset = params.sellAsset.trim().toUpperCase();
+  const warnings: string[] = [];
+
+  let resolvedLots: TaxLot[] = params.lots ? [...params.lots] : [];
+  let currentPriceUsd: number | null =
+    typeof params.currentPriceUsd === "number" && params.currentPriceUsd > 0
+      ? params.currentPriceUsd
+      : null;
+
+  if (resolvedLots.length === 0) {
+    const portfolio = await fetchWalletPortfolioFromAlchemy({
+      walletAddress: params.walletAddress,
+      chain,
+      targetAsset: sellAsset,
+      alchemyApiKey: deps.env.ALCHEMY_API_KEY,
+    });
+    warnings.push(...portfolio.warnings);
+
+    const matchedAsset = portfolio.assets.find(
+      (item) => item.asset.toUpperCase() === sellAsset
+    );
+    if (matchedAsset) {
+      resolvedLots = matchedAsset.lots;
+      if (currentPriceUsd === null && matchedAsset.currentPriceUsd !== null && matchedAsset.currentPriceUsd > 0) {
+        currentPriceUsd = matchedAsset.currentPriceUsd;
+      }
+    }
+  }
+
+  if (currentPriceUsd === null) {
+    const spot = await fetchSpotPriceUsd(sellAsset, deps.env.ALCHEMY_API_KEY);
+    if (spot.priceUsd !== null) {
+      currentPriceUsd = spot.priceUsd;
+    } else {
+      warnings.push(`Live spot price unavailable for ${sellAsset} on ${chain}`);
+    }
+  }
+
+  if (resolvedLots.length === 0 || currentPriceUsd === null || currentPriceUsd <= 0) {
+    return {
+      status: "NEEDS_LOT_HISTORY",
+      recommendation: "PROVIDE_EXPLICIT_LOTS",
+      walletAddress: params.walletAddress,
+      chain,
+      sellAsset,
+      sellAmount: params.sellAmount,
+      currentPriceUsd,
+      jurisdiction,
+      regime,
+      lotsScanned: 0,
+      baselineTaxUsd: 0,
+      optimizedTaxUsd: 0,
+      taxSavedUsd: 0,
+      longTermCliffWarning: null,
+      warnings:
+        warnings.length > 0
+          ? warnings
+          : [
+              `No historical lots or price oracle entry found for ${sellAsset} on ${chain}. Pass explicit lots via POST /api/v1/check-tax-impact.`,
+            ],
+      agentGuidance:
+        "Lot history was unavailable on this chain; pass explicit tax lots via POST /api/v1/check-tax-impact to unlock SpecID savings.",
+      disclaimer:
+        "Deterministic software calculation for tax planning, not legal or CPA advice.",
+    };
+  }
+
+  const preview = await executeCheckTaxImpact(
+    {
+      jurisdiction,
+      regime,
+      chain,
+      walletAddress: params.walletAddress,
+      targetAsset: sellAsset,
+      sellQuantity: params.sellAmount,
+      currentPriceUsd,
+      lots: resolvedLots,
+      ...(params.referrerWallet ? { referrerWallet: params.referrerWallet } : {}),
+    },
+    { ...deps, skipLive0xQuote: true }
+  );
+  warnings.push(...preview.warnings);
+
+  // Detect imminent US Short-Term -> Long-Term cliff (held 305..364 days)
+  let longTermCliffWarning: string | null = null;
+  if (jurisdiction === "US") {
+    const nowMs = Date.now();
+    const soonest = resolvedLots
+      .map((lot) => {
+        const heldDays = (nowMs - Date.parse(lot.acquiredAt)) / 86_400_000;
+        const daysRemaining = Math.ceil(366 - heldDays);
+        return { lot, heldDays, daysRemaining };
+      })
+      .filter((entry) => entry.heldDays >= 305 && entry.heldDays < 366 && entry.lot.costBasisUsd < currentPriceUsd!)
+      .sort((a, b) => a.daysRemaining - b.daysRemaining)[0];
+
+    if (soonest) {
+      longTermCliffWarning = `Lot ${soonest.lot.lotId} reaches 366-day US Long-Term Capital Gains eligibility in ${soonest.daysRemaining} day(s) — holding drops federal tax rate sharply vs short-term ordinary rates.`;
+    }
+  }
+
+  // Compare Aave v3 Borrow-vs-Sell when selling creates meaningful tax liability
+  const disposalNotionalUsd = params.sellAmount * currentPriceUsd;
+  let borrowVsSellComparison: PreTradeCheckResult["borrowVsSellComparison"];
+  let borrowPlanId: string | undefined;
+
+  if (preview.optimizedTaxUsd >= 50 && disposalNotionalUsd >= 200) {
+    const lowestBasisLot = [...resolvedLots].sort(
+      (a, b) => a.costBasisUsd - b.costBasisUsd
+    )[0]!;
+    const borrowPreview = await executeBorrowVsSell(
+      {
+        jurisdiction,
+        regime,
+        chain: chain === "base" || chain === "ethereum" || chain === "arbitrum" ? chain : "base",
+        collateralAsset: sellAsset,
+        collateralAmount: params.sellAmount * 2,
+        collateralPriceUsd: currentPriceUsd,
+        collateralCostBasisUsd: lowestBasisLot.costBasisUsd,
+        liquidityNeededUsd: Number(disposalNotionalUsd.toFixed(2)),
+        holdingDays: 365,
+        horizonDays: 90,
+        ...(params.referrerWallet ? { referrerWallet: params.referrerWallet } : {}),
+      },
+      deps
+    );
+    borrowVsSellComparison = {
+      recommendation: borrowPreview.recommendation,
+      sellTaxCostUsd: borrowPreview.sellTaxCostUsd,
+      netBorrowCostUsd: borrowPreview.netBorrowCostUsd,
+      taxSavedUsd: borrowPreview.taxSavedUsd,
+      projectedLtvPct: borrowPreview.projectedLtvPct,
+    };
+    borrowPlanId = borrowPreview.planId;
+  }
+
+  let recommendation: PreTradeCheckResult["recommendation"] = "SELL_OPTIMIZED_HIFO";
+  let status: PreTradeCheckResult["status"] = "PRE_TRADE_OPTIMIZED";
+
+  if (longTermCliffWarning && preview.optimizedTaxUsd > 25) {
+    recommendation = "WAIT_FOR_LONG_TERM";
+    status = "WAIT_FOR_LONG_TERM";
+  } else if (borrowVsSellComparison?.recommendation === "BORROW_AAVE_V3") {
+    recommendation = "BORROW_AAVE_V3";
+    status = "BORROW_PREFERRED";
+  } else if (preview.baselineTaxUsd <= 0 && preview.optimizedTaxUsd <= 0) {
+    recommendation = "SELL_ZERO_TAX";
+    status = "NO_TAX_IMPACT";
+  }
+
+  const agentGuidance =
+    recommendation === "WAIT_FOR_LONG_TERM"
+      ? `${longTermCliffWarning} Or unlock SpecID HIFO swap plan ${preview.planId} ($${preview.pricing.upfrontX402Usd.toFixed(2)} USDC) to save $${preview.taxSavedUsd.toFixed(2)} if you must sell today.`
+      : recommendation === "BORROW_AAVE_V3" && borrowVsSellComparison
+        ? `Do NOT sell ${params.sellAmount} ${sellAsset}: selling triggers ~$${borrowVsSellComparison.sellTaxCostUsd.toFixed(2)} tax while Aave v3 borrow nets ~$${borrowVsSellComparison.netBorrowCostUsd.toFixed(2)} (saves $${borrowVsSellComparison.taxSavedUsd.toFixed(2)}). Unlock borrowPlanId ${borrowPlanId} or swap planId ${preview.planId}.`
+        : preview.taxSavedUsd > 0
+          ? `HIFO/SpecID cuts tax from $${preview.baselineTaxUsd.toFixed(2)} to $${preview.optimizedTaxUsd.toFixed(2)} (saving $${preview.taxSavedUsd.toFixed(2)}). Unlock exact lot IDs & 0x calldata via POST /api/v1/unlock-plan {"planId":"${preview.planId}"} ($${preview.pricing.upfrontX402Usd.toFixed(2)} USDC).`
+          : `No taxable gain leaked on ${params.sellAmount} ${sellAsset}. Unlock compliance dossier FREE ($0.00) with planId ${preview.planId}.`;
+
+  return {
+    status,
+    recommendation,
+    walletAddress: params.walletAddress,
+    chain,
+    sellAsset,
+    sellAmount: params.sellAmount,
+    currentPriceUsd,
+    jurisdiction,
+    regime,
+    lotsScanned: resolvedLots.length,
+    baselineTaxUsd: preview.baselineTaxUsd,
+    optimizedTaxUsd: preview.optimizedTaxUsd,
+    taxSavedUsd: preview.taxSavedUsd,
+    longTermCliffWarning,
+    ...(borrowVsSellComparison ? { borrowVsSellComparison } : {}),
+    planId: preview.planId,
+    ...(borrowPlanId ? { borrowPlanId } : {}),
+    upfrontUnlockCostUsd: preview.pricing.upfrontX402Usd,
+    warnings,
+    agentGuidance,
+    disclaimer:
+      "Deterministic software calculation for tax planning, not legal or CPA advice.",
+  };
+}
+
+/**
+ * Computes Brazil R$35,000 monthly domestic exemption status vs Lei 14.754/2023 15% flat offshore tax
+ * (`GET|POST /api/v1/x402/br-35k-status`, $0.005 USDC).
+ */
+export function executeBr35kStatus(params: {
+  monthlySalesBrl: number;
+  plannedSaleUsd: number;
+  custodyLocation: "DOMESTIC" | "OFFSHORE";
+  usdBrlRate?: number;
+  estimatedGainMarginPct?: number;
+}): Br35kStatusResult {
+  const usdBrlRate =
+    typeof params.usdBrlRate === "number" && params.usdBrlRate > 0 ? params.usdBrlRate : 5.8;
+  const thresholdBrl = 35_000;
+  const monthlySalesBrl = Math.max(0, Number(params.monthlySalesBrl.toFixed(2)));
+  const plannedSaleBrl = Math.max(0, Number((params.plannedSaleUsd * usdBrlRate).toFixed(2)));
+  const projectedTotalBrl = Number((monthlySalesBrl + plannedSaleBrl).toFixed(2));
+  const gainMargin =
+    typeof params.estimatedGainMarginPct === "number" &&
+    params.estimatedGainMarginPct > 0 &&
+    params.estimatedGainMarginPct <= 100
+      ? params.estimatedGainMarginPct / 100
+      : 0.35;
+
+  if (params.custodyLocation === "OFFSHORE") {
+    const estimatedTaxIfSoldNowBrl = Number((plannedSaleBrl * gainMargin * 0.15).toFixed(2));
+    const estimatedTaxIfSoldNowUsd = Number((estimatedTaxIfSoldNowBrl / usdBrlRate).toFixed(2));
+
+    return {
+      status: "LEI_14754_FLAT_15PCT",
+      custodyLocation: "OFFSHORE",
+      monthlySalesBrl,
+      plannedSaleBrl,
+      projectedTotalBrl,
+      thresholdBrl,
+      remainingExemptBrl: 0,
+      remainingExemptUsd: 0,
+      wouldBreach35kThreshold: false,
+      lei14754Applies: true,
+      estimatedTaxRatePct: 15,
+      estimatedTaxIfSoldNowBrl,
+      estimatedTaxIfSoldNowUsd,
+      recommendedMaxSaleThisMonthUsd: 0,
+      usdBrlRate,
+      ruleSummary:
+        "Lei 14.754/2023 eliminates the R$35k monthly exemption for offshore exchanges, DEX swaps, and self-custody wallets: annual net crypto gains are taxed at a flat 15%.",
+      agentGuidance:
+        "Offshore/DEX swaps do NOT qualify for Brazil's R$35,000 monthly exemption. Harvest unrealized losses in the same calendar year via /api/v1/x402/tlh-scan or route liquidity through /api/v1/borrow-vs-sell before realizing taxable gains.",
+      disclaimer:
+        "Deterministic software calculation for Brazil crypto tax planning (Lei 14.754/2023 & IN RFB 1888), not legal or CPA advice.",
+    };
+  }
+
+  const remainingBeforeSaleBrl = Math.max(0, Number((thresholdBrl - monthlySalesBrl).toFixed(2)));
+  const remainingAfterSaleBrl = Math.max(0, Number((thresholdBrl - projectedTotalBrl).toFixed(2)));
+  const wouldBreach35kThreshold = projectedTotalBrl > thresholdBrl;
+  const recommendedMaxSaleThisMonthUsd = Number((remainingBeforeSaleBrl / usdBrlRate).toFixed(2));
+
+  if (!wouldBreach35kThreshold) {
+    return {
+      status: "EXEMPT_UNDER_35K",
+      custodyLocation: "DOMESTIC",
+      monthlySalesBrl,
+      plannedSaleBrl,
+      projectedTotalBrl,
+      thresholdBrl,
+      remainingExemptBrl: remainingAfterSaleBrl,
+      remainingExemptUsd: Number((remainingAfterSaleBrl / usdBrlRate).toFixed(2)),
+      wouldBreach35kThreshold: false,
+      lei14754Applies: false,
+      estimatedTaxRatePct: 0,
+      estimatedTaxIfSoldNowBrl: 0,
+      estimatedTaxIfSoldNowUsd: 0,
+      recommendedMaxSaleThisMonthUsd,
+      usdBrlRate,
+      ruleSummary:
+        "Domestic exchange alienations totaling <= R$35,000.00 within the calendar month remain tax-exempt for Brazilian individuals (PF_DOMESTIC).",
+      agentGuidance: `Safe to execute: projected monthly alienations (R$${projectedTotalBrl.toFixed(
+        2
+      )}) stay under the R$35,000 threshold, leaving R$${remainingAfterSaleBrl.toFixed(
+        2
+      )} (~$${(remainingAfterSaleBrl / usdBrlRate).toFixed(2)} USD) exempt this month.`,
+      disclaimer:
+        "Deterministic software calculation for Brazil crypto tax planning (Lei 14.754/2023 & IN RFB 1888), not legal or CPA advice.",
+    };
+  }
+
+  const estimatedTaxIfSoldNowBrl = Number((plannedSaleBrl * gainMargin * 0.15).toFixed(2));
+  const estimatedTaxIfSoldNowUsd = Number((estimatedTaxIfSoldNowBrl / usdBrlRate).toFixed(2));
+
+  return {
+    status: "BREACHES_35K_TAX_APPLIES",
+    custodyLocation: "DOMESTIC",
+    monthlySalesBrl,
+    plannedSaleBrl,
+    projectedTotalBrl,
+    thresholdBrl,
+    remainingExemptBrl: 0,
+    remainingExemptUsd: 0,
+    wouldBreach35kThreshold: true,
+    lei14754Applies: false,
+    estimatedTaxRatePct: 15,
+    estimatedTaxIfSoldNowBrl,
+    estimatedTaxIfSoldNowUsd,
+    recommendedMaxSaleThisMonthUsd,
+    usdBrlRate,
+    ruleSummary:
+      "Exceeding R$35,000.00 in total domestic monthly crypto sales removes the exemption for the ENTIRE month's gains (progressive 15%–22.5% DARF due next month).",
+    agentGuidance: `STOP or SPLIT SALE: selling $${params.plannedSaleUsd.toFixed(
+      2
+    )} USD pushes monthly alienations to R$${projectedTotalBrl.toFixed(
+      2
+    )} (> R$35,000). Cap this month's sale at $${recommendedMaxSaleThisMonthUsd.toFixed(
+      2
+    )} USD (R$${remainingBeforeSaleBrl.toFixed(
+      2
+    )}) to pay R$0 tax, and defer the rest until the 1st of next month.`,
+    disclaimer:
+      "Deterministic software calculation for Brazil crypto tax planning (Lei 14.754/2023 & IN RFB 1888), not legal or CPA advice.",
   };
 }

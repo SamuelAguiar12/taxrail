@@ -8,13 +8,23 @@ const BASE_URL = (process.env.TAXRAIL_BASE_URL || "https://api.taxrail.online").
   ""
 );
 
-type EndpointTarget = "unlock" | "tlh-scan" | "optimize" | "all";
+type EndpointTarget =
+  | "unlock"
+  | "tlh-scan"
+  | "pre-trade"
+  | "br-35k"
+  | "new"
+  | "optimize"
+  | "all";
 
 function parseArgs(): { live: boolean; dryRun: boolean; endpoint: EndpointTarget } {
   const args = process.argv.slice(2);
   const endpointArg = args.find((a) => a.startsWith("--endpoint="))?.split("=")[1];
   const endpoint: EndpointTarget =
     endpointArg === "tlh-scan" ||
+    endpointArg === "pre-trade" ||
+    endpointArg === "br-35k" ||
+    endpointArg === "new" ||
     endpointArg === "optimize" ||
     endpointArg === "all" ||
     endpointArg === "unlock"
@@ -116,6 +126,26 @@ async function main() {
     await runPaidCall({
       label: "$0.01 TLH Scan",
       url: `${BASE_URL}/api/v1/x402/tlh-scan?walletAddress=0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1&chain=base&asset=ALL`,
+      method: "GET",
+      live,
+      rawPrivateKey,
+    });
+  }
+
+  if (endpoint === "pre-trade" || endpoint === "new" || endpoint === "all") {
+    await runPaidCall({
+      label: "$0.01 Pre-Trade Check",
+      url: `${BASE_URL}/api/v1/x402/pre-trade-check?walletAddress=0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1&sellAsset=ETH&sellAmount=1&chain=base&jurisdiction=US`,
+      method: "GET",
+      live,
+      rawPrivateKey,
+    });
+  }
+
+  if (endpoint === "br-35k" || endpoint === "new" || endpoint === "all") {
+    await runPaidCall({
+      label: "$0.005 Brazil R$35k Status",
+      url: `${BASE_URL}/api/v1/x402/br-35k-status?monthlySalesBrl=20000&plannedSaleUsd=2500&custodyLocation=DOMESTIC&usdBrlRate=5.8`,
       method: "GET",
       live,
       rawPrivateKey,

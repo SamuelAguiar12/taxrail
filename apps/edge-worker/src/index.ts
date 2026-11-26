@@ -28,14 +28,18 @@ import { fetchSpotPriceUsd, fetchWalletLotsFromAlchemy } from "./onchain.js";
 import { createPlanStore } from "./plan-store.js";
 import {
   executeBorrowVsSell,
+  executeBr35kStatus,
   executeCheckTaxImpact,
   executeClassifyExpense,
+  executePreTradeCheck,
   executeQuickOptimize,
   executeWalletTlhScan,
 } from "./service.js";
 import {
   buildQuickOptimizeProbePaymentRequired,
   buildUnlockProbePaymentRequired,
+  verifyBr35kStatusPayment,
+  verifyPreTradeCheckPayment,
   verifyQuickOptimizePayment,
   verifyTlhScanPayment,
   verifyUnlockPayment,
@@ -110,6 +114,8 @@ export function createApp(): Hono<{ Bindings: Env }> {
         llmsTxt: `${baseUrl}/llms.txt`,
         skillMd: `${baseUrl}/SKILL.md`,
         openapi: `${baseUrl}/openapi.json`,
+        preTradeCheck: `${baseUrl}/api/v1/x402/pre-trade-check`,
+        br35kStatus: `${baseUrl}/api/v1/x402/br-35k-status`,
         feedback: `${baseUrl}/api/v1/feedback`,
         reputation: `${baseUrl}/api/v1/reputation`,
         mcp: `${baseUrl}/mcp`,
@@ -628,6 +634,280 @@ export function createApp(): Hono<{ Bindings: Env }> {
       c.header("PAYMENT-RESPONSE", paymentResult.paymentResponseHeader);
     }
     return c.json(scanResult, 200);
+  });
+
+  // x402 $0.01 pre-trade swap/sell tax guardrail check
+  app.on(["GET", "POST"], "/api/v1/x402/pre-trade-check", async (c) => {
+    const paymentHeader =
+      c.req.header("PAYMENT-SIGNATURE") ?? c.req.header("X-PAYMENT") ?? null;
+
+    // 1. x402 paywall FIRST so unpaid Bazaar crawlers always get HTTP 402 + schema
+    const paymentResult = await verifyPreTradeCheckPayment({
+      paymentHeader,
+      env: c.env,
+      requestUrl: c.req.url,
+    });
+
+    if (paymentResult.status === "settlement_failed") {
+      return c.json(
+        {
+          error: paymentResult.reason ?? "x402 facilitator settlement failed",
+        },
+        502
+      );
+    }
+
+    if (paymentResult.status !== "paid") {
+      c.header("PAYMENT-REQUIRED", paymentResult.paymentRequiredHeader);
+      return c.json(
+        paymentResult.status === "payment_required"
+          ? paymentResult.paymentRequired
+          : {
+              error: paymentResult.reason ?? "Invalid x402 payment payload",
+              paymentRequired: paymentResult.paymentRequired,
+            },
+        402
+      );
+    }
+
+    // 2. Paid request validated -> resolve query params / optional JSON body
+    let bodyParams: Record<string, unknown> = {};
+    if (c.req.method === "POST") {
+      try {
+        const parsed = await c.req.json();
+        if (parsed && typeof parsed === "object") {
+          bodyParams = parsed as Record<string, unknown>;
+        }
+      } catch {
+        // Optional POST body
+      }
+    }
+
+    const rawWallet =
+      c.req.query("walletAddress") ||
+      (typeof bodyParams.walletAddress === "string" ? bodyParams.walletAddress : "");
+    const walletAddress = rawWallet.trim();
+    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      return c.json(
+        {
+          error:
+            "Missing or invalid walletAddress (must be a 0x EVM address, e.g. ?walletAddress=0x...&sellAsset=ETH&sellAmount=1)",
+        },
+        400
+      );
+    }
+
+    const sellAsset = (
+      c.req.query("sellAsset") ||
+      (typeof bodyParams.sellAsset === "string" ? bodyParams.sellAsset : "ETH")
+    )
+      .trim()
+      .toUpperCase();
+    const rawAmount =
+      c.req.query("sellAmount") ??
+      (typeof bodyParams.sellAmount === "number" || typeof bodyParams.sellAmount === "string"
+        ? String(bodyParams.sellAmount)
+        : "1");
+    const sellAmount = Number(rawAmount);
+    if (!Number.isFinite(sellAmount) || sellAmount <= 0) {
+      return c.json(
+        { error: "Invalid sellAmount (must be a positive number)" },
+        400
+      );
+    }
+
+    const rawChain =
+      c.req.query("chain") ||
+      (typeof bodyParams.chain === "string" ? bodyParams.chain : "base");
+    const chain =
+      rawChain === "ethereum" || rawChain === "arbitrum" || rawChain === "base"
+        ? rawChain
+        : "base";
+    const rawJurisdiction =
+      c.req.query("jurisdiction") ||
+      (typeof bodyParams.jurisdiction === "string" ? bodyParams.jurisdiction : "US");
+    const jurisdiction = rawJurisdiction.toUpperCase() === "BR" ? "BR" : "US";
+    const regimeParam =
+      c.req.query("regime") ||
+      (typeof bodyParams.regime === "string" ? bodyParams.regime : undefined);
+    const referrerWallet =
+      c.req.query("referrerWallet") ||
+      (typeof bodyParams.referrerWallet === "string" ? bodyParams.referrerWallet : undefined);
+    const rawPrice =
+      c.req.query("currentPriceUsd") ??
+      (typeof bodyParams.currentPriceUsd === "number" ? String(bodyParams.currentPriceUsd) : undefined);
+    const currentPriceUsd =
+      rawPrice && Number.isFinite(Number(rawPrice)) && Number(rawPrice) > 0
+        ? Number(rawPrice)
+        : undefined;
+    const lots = Array.isArray(bodyParams.lots)
+      ? (bodyParams.lots as Parameters<typeof executePreTradeCheck>[0]["lots"])
+      : undefined;
+
+    const planStore = createPlanStore(c.env);
+    const result = await executePreTradeCheck(
+      {
+        walletAddress,
+        sellAsset,
+        sellAmount,
+        chain,
+        jurisdiction,
+        ...(regimeParam ? { regime: regimeParam as Parameters<typeof executePreTradeCheck>[0]["regime"] } : {}),
+        ...(referrerWallet ? { referrerWallet } : {}),
+        ...(currentPriceUsd !== undefined ? { currentPriceUsd } : {}),
+        ...(lots ? { lots } : {}),
+      },
+      { planStore, env: c.env }
+    );
+
+    console.log(
+      JSON.stringify({
+        event: "x402_pre_trade_check_paid",
+        walletAddress,
+        sellAsset,
+        sellAmount,
+        chain,
+        recommendation: result.recommendation,
+        taxSavedUsd: result.taxSavedUsd,
+        planId: result.planId ?? null,
+        settlementTx: paymentResult.settlementTx ?? null,
+      })
+    );
+
+    await recordPaidReceipt(c.env, {
+      settlementTx: paymentResult.settlementTx,
+      tier: "PRE_TRADE_CHECK",
+      amountUsd: 0.01,
+      taxSavedUsd: result.taxSavedUsd,
+      planId: result.planId,
+    });
+
+    if (paymentResult.paymentResponseHeader) {
+      c.header("PAYMENT-RESPONSE", paymentResult.paymentResponseHeader);
+    }
+    return c.json(result, 200);
+  });
+
+  // x402 $0.005 Brazil R$35k monthly exemption & Lei 14.754 check
+  app.on(["GET", "POST"], "/api/v1/x402/br-35k-status", async (c) => {
+    const paymentHeader =
+      c.req.header("PAYMENT-SIGNATURE") ?? c.req.header("X-PAYMENT") ?? null;
+
+    // 1. x402 paywall FIRST so unpaid Bazaar crawlers always get HTTP 402 + schema
+    const paymentResult = await verifyBr35kStatusPayment({
+      paymentHeader,
+      env: c.env,
+      requestUrl: c.req.url,
+    });
+
+    if (paymentResult.status === "settlement_failed") {
+      return c.json(
+        {
+          error: paymentResult.reason ?? "x402 facilitator settlement failed",
+        },
+        502
+      );
+    }
+
+    if (paymentResult.status !== "paid") {
+      c.header("PAYMENT-REQUIRED", paymentResult.paymentRequiredHeader);
+      return c.json(
+        paymentResult.status === "payment_required"
+          ? paymentResult.paymentRequired
+          : {
+              error: paymentResult.reason ?? "Invalid x402 payment payload",
+              paymentRequired: paymentResult.paymentRequired,
+            },
+        402
+      );
+    }
+
+    let bodyParams: Record<string, unknown> = {};
+    if (c.req.method === "POST") {
+      try {
+        const parsed = await c.req.json();
+        if (parsed && typeof parsed === "object") {
+          bodyParams = parsed as Record<string, unknown>;
+        }
+      } catch {
+        // Optional POST body
+      }
+    }
+
+    const monthlySalesBrl = Number(
+      c.req.query("monthlySalesBrl") ??
+        (bodyParams.monthlySalesBrl !== undefined ? String(bodyParams.monthlySalesBrl) : "0")
+    );
+    const plannedSaleUsd = Number(
+      c.req.query("plannedSaleUsd") ??
+        (bodyParams.plannedSaleUsd !== undefined ? String(bodyParams.plannedSaleUsd) : "1000")
+    );
+    if (
+      !Number.isFinite(monthlySalesBrl) ||
+      monthlySalesBrl < 0 ||
+      !Number.isFinite(plannedSaleUsd) ||
+      plannedSaleUsd < 0
+    ) {
+      return c.json(
+        { error: "monthlySalesBrl and plannedSaleUsd must be non-negative finite numbers" },
+        400
+      );
+    }
+
+    const rawCustody = (
+      c.req.query("custodyLocation") ||
+      (typeof bodyParams.custodyLocation === "string" ? bodyParams.custodyLocation : "DOMESTIC")
+    )
+      .trim()
+      .toUpperCase();
+    const custodyLocation = rawCustody === "OFFSHORE" ? "OFFSHORE" : "DOMESTIC";
+
+    const rawFx =
+      c.req.query("usdBrlRate") ??
+      (bodyParams.usdBrlRate !== undefined ? String(bodyParams.usdBrlRate) : undefined);
+    const usdBrlRate =
+      rawFx && Number.isFinite(Number(rawFx)) && Number(rawFx) > 0 ? Number(rawFx) : undefined;
+
+    const rawMargin =
+      c.req.query("estimatedGainMarginPct") ??
+      (bodyParams.estimatedGainMarginPct !== undefined
+        ? String(bodyParams.estimatedGainMarginPct)
+        : undefined);
+    const estimatedGainMarginPct =
+      rawMargin && Number.isFinite(Number(rawMargin)) && Number(rawMargin) > 0
+        ? Number(rawMargin)
+        : undefined;
+
+    const statusResult = executeBr35kStatus({
+      monthlySalesBrl,
+      plannedSaleUsd,
+      custodyLocation,
+      ...(usdBrlRate !== undefined ? { usdBrlRate } : {}),
+      ...(estimatedGainMarginPct !== undefined ? { estimatedGainMarginPct } : {}),
+    });
+
+    console.log(
+      JSON.stringify({
+        event: "x402_br_35k_status_paid",
+        custodyLocation,
+        monthlySalesBrl,
+        plannedSaleUsd,
+        status: statusResult.status,
+        wouldBreach35kThreshold: statusResult.wouldBreach35kThreshold,
+        settlementTx: paymentResult.settlementTx ?? null,
+      })
+    );
+
+    await recordPaidReceipt(c.env, {
+      settlementTx: paymentResult.settlementTx,
+      tier: "BR_35K_STATUS",
+      amountUsd: 0.005,
+    });
+
+    if (paymentResult.paymentResponseHeader) {
+      c.header("PAYMENT-RESPONSE", paymentResult.paymentResponseHeader);
+    }
+    return c.json(statusResult, 200);
   });
 
   // Free Verified Agent Feedback & Public Reputation Loop

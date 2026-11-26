@@ -685,6 +685,233 @@ export function buildTlhScanProbePaymentRequired(
 }
 
 /**
+ * Builds an x402 v2 PaymentRequired payload for the $0.01 pre-trade swap/sell tax check.
+ * Designed for per-trade AI agent guardrails (HIFO vs FIFO, ST->LT cliff alert, Borrow-vs-Sell check).
+ */
+export function buildPreTradeCheckPaymentRequired(
+  env: Env,
+  requestUrl?: string
+): {
+  paymentRequired: PaymentRequired;
+  requirements: PaymentRequirements;
+} {
+  const payTo = env.PAY_TO_ADDRESS || DEFAULT_PAY_TO_ADDRESS;
+  const network = (env.X402_NETWORK || DEFAULT_X402_NETWORK) as Network;
+  const asset = env.X402_ASSET || DEFAULT_X402_ASSET;
+  const baseUrl = resolvePublicBaseUrl(env, requestUrl);
+  const resourceUrl = `${baseUrl}/api/v1/x402/pre-trade-check`;
+  const atomicAmount = usdToUsdcAtomic(0.01);
+
+  const requirements: PaymentRequirements = {
+    scheme: "exact",
+    network,
+    amount: atomicAmount,
+    asset,
+    payTo,
+    maxTimeoutSeconds: 300,
+    extra: {
+      name: "USD Coin",
+      version: "2",
+      pricingModel: "FLAT_PRE_TRADE_CHECK_0_01_USD",
+      service: "taxrail-pre-trade-check",
+    },
+  };
+
+  const paymentRequired: PaymentRequired = {
+    x402Version: 2,
+    error: "Payment required: $0.01 USDC on Base Mainnet for instant pre-trade tax guardrail check",
+    resource: {
+      url: resourceUrl,
+      description:
+        "Instant $0.01 USDC pre-trade tax check before executing any swap or sell: computes FIFO vs HIFO savings, warns on imminent Short-Term -> Long-Term tax cliffs, compares Aave v3 borrow-vs-sell, and returns an unlockable SpecID/calldata planId.",
+      mimeType: "application/json",
+    },
+    accepts: [requirements],
+    extensions: {
+      bazaar: {
+        info: {
+          input: {
+            type: "http",
+            method: "GET",
+            queryParams: {
+              walletAddress: "0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1",
+              sellAsset: "ETH",
+              sellAmount: "1",
+              chain: "base",
+              jurisdiction: "US",
+            },
+          },
+          output: {
+            type: "json",
+            example: {
+              status: "PRE_TRADE_OPTIMIZED",
+              recommendation: "SELL_OPTIMIZED_HIFO",
+              walletAddress: "0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1",
+              chain: "base",
+              sellAsset: "ETH",
+              sellAmount: 1,
+              baselineTaxUsd: 680,
+              optimizedTaxUsd: 140,
+              taxSavedUsd: 540,
+              longTermCliffWarning: null,
+              planId: "plan_pretrade_example",
+            },
+          },
+        },
+        schema: {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          type: "object",
+          properties: {
+            input: {
+              type: "object",
+              properties: {
+                queryParams: {
+                  type: "object",
+                  required: ["walletAddress", "sellAsset", "sellAmount"],
+                  properties: {
+                    walletAddress: {
+                      type: "string",
+                      description: "EVM wallet address (0x...) holding the token to sell",
+                    },
+                    sellAsset: {
+                      type: "string",
+                      description: "Token symbol being sold or swapped (e.g. ETH, AERO, WBTC)",
+                    },
+                    sellAmount: {
+                      type: "string",
+                      description: "Positive token quantity to sell or swap",
+                    },
+                    chain: { type: "string", enum: ["base", "ethereum", "arbitrum"] },
+                    jurisdiction: { type: "string", enum: ["US", "BR"] },
+                    regime: { type: "string" },
+                    referrerWallet: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  return { paymentRequired, requirements };
+}
+
+/**
+ * Builds an x402 v2 PaymentRequired payload for the $0.005 Brazil R$35k / Lei 14.754 check.
+ */
+export function buildBr35kStatusPaymentRequired(
+  env: Env,
+  requestUrl?: string
+): {
+  paymentRequired: PaymentRequired;
+  requirements: PaymentRequirements;
+} {
+  const payTo = env.PAY_TO_ADDRESS || DEFAULT_PAY_TO_ADDRESS;
+  const network = (env.X402_NETWORK || DEFAULT_X402_NETWORK) as Network;
+  const asset = env.X402_ASSET || DEFAULT_X402_ASSET;
+  const baseUrl = resolvePublicBaseUrl(env, requestUrl);
+  const resourceUrl = `${baseUrl}/api/v1/x402/br-35k-status`;
+  const atomicAmount = usdToUsdcAtomic(0.005);
+
+  const requirements: PaymentRequirements = {
+    scheme: "exact",
+    network,
+    amount: atomicAmount,
+    asset,
+    payTo,
+    maxTimeoutSeconds: 300,
+    extra: {
+      name: "USD Coin",
+      version: "2",
+      pricingModel: "FLAT_BR_35K_STATUS_0_005_USD",
+      service: "taxrail-br-35k-status",
+    },
+  };
+
+  const paymentRequired: PaymentRequired = {
+    x402Version: 2,
+    error:
+      "Payment required: $0.005 USDC on Base Mainnet for Brazil R$35k monthly exemption & Lei 14.754 check",
+    resource: {
+      url: resourceUrl,
+      description:
+        "Instant $0.005 USDC Brazil crypto tax compliance check: calculates remaining R$35,000 monthly domestic exemption room vs Lei 14.754 flat 15% offshore/DeFi tax and returns maximum tax-free sale size in USD.",
+      mimeType: "application/json",
+    },
+    accepts: [requirements],
+    extensions: {
+      bazaar: {
+        info: {
+          input: {
+            type: "http",
+            method: "GET",
+            queryParams: {
+              monthlySalesBrl: "20000",
+              plannedSaleUsd: "2500",
+              custodyLocation: "DOMESTIC",
+              usdBrlRate: "5.8",
+            },
+          },
+          output: {
+            type: "json",
+            example: {
+              status: "EXEMPT_UNDER_35K",
+              custodyLocation: "DOMESTIC",
+              monthlySalesBrl: 20000,
+              plannedSaleBrl: 14500,
+              projectedTotalBrl: 34500,
+              thresholdBrl: 35000,
+              remainingExemptBrl: 500,
+              remainingExemptUsd: 86.21,
+              wouldBreach35kThreshold: false,
+              lei14754Applies: false,
+              estimatedTaxRatePct: 0,
+            },
+          },
+        },
+        schema: {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          type: "object",
+          properties: {
+            input: {
+              type: "object",
+              properties: {
+                queryParams: {
+                  type: "object",
+                  properties: {
+                    monthlySalesBrl: {
+                      type: "string",
+                      description: "Total crypto sales already executed this calendar month in BRL",
+                    },
+                    plannedSaleUsd: {
+                      type: "string",
+                      description: "Planned next crypto sale or swap value in USD",
+                    },
+                    custodyLocation: {
+                      type: "string",
+                      enum: ["DOMESTIC", "OFFSHORE"],
+                      description: "Brazil licensed exchange (DOMESTIC) vs DEX/self-custody/foreign CEX (OFFSHORE)",
+                    },
+                    usdBrlRate: {
+                      type: "string",
+                      description: "Optional USD/BRL FX rate override (defaults to 5.80)",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  return { paymentRequired, requirements };
+}
+
+/**
  * Shared verifier/settler for flat-priced x402 endpoints ($0.01 TLH scan & $0.10 quick optimize).
  */
 async function verifyFlatX402Payment(params: {
@@ -770,5 +997,31 @@ export async function verifyQuickOptimizePayment(params: {
 }): Promise<QuickOptimizePaymentResult> {
   const { paymentHeader, env, requestUrl } = params;
   const { paymentRequired, requirements } = buildQuickOptimizePaymentRequired(env, requestUrl);
+  return verifyFlatX402Payment({ paymentHeader, env, paymentRequired, requirements });
+}
+
+/**
+ * Verifies & settles the $0.01 USDC x402 payment for `/api/v1/x402/pre-trade-check`.
+ */
+export async function verifyPreTradeCheckPayment(params: {
+  paymentHeader?: string | null;
+  env: Env;
+  requestUrl?: string;
+}): Promise<QuickOptimizePaymentResult> {
+  const { paymentHeader, env, requestUrl } = params;
+  const { paymentRequired, requirements } = buildPreTradeCheckPaymentRequired(env, requestUrl);
+  return verifyFlatX402Payment({ paymentHeader, env, paymentRequired, requirements });
+}
+
+/**
+ * Verifies & settles the $0.005 USDC x402 payment for `/api/v1/x402/br-35k-status`.
+ */
+export async function verifyBr35kStatusPayment(params: {
+  paymentHeader?: string | null;
+  env: Env;
+  requestUrl?: string;
+}): Promise<QuickOptimizePaymentResult> {
+  const { paymentHeader, env, requestUrl } = params;
+  const { paymentRequired, requirements } = buildBr35kStatusPaymentRequired(env, requestUrl);
   return verifyFlatX402Payment({ paymentHeader, env, paymentRequired, requirements });
 }

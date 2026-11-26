@@ -130,8 +130,129 @@ describe("TaxRail Edge Worker", () => {
       };
       expect(body.version).toBe(1);
       expect(body.resources).toContain("https://api.taxrail.online/api/v1/x402/tlh-scan");
+      expect(body.resources).toContain("https://api.taxrail.online/api/v1/x402/pre-trade-check");
+      expect(body.resources).toContain("https://api.taxrail.online/api/v1/x402/br-35k-status");
       expect(body.resources).toContain("https://api.taxrail.online/api/v1/x402/optimize");
       expect(body.resources).toContain("https://api.taxrail.online/api/v1/unlock-plan");
+    });
+
+    it("returns HTTP 402 ($0.01 USDC) on unpaid /api/v1/x402/pre-trade-check and computes HIFO/borrow recommendation when paid", async () => {
+      const unpaidRes = await app.request("/api/v1/x402/pre-trade-check", undefined, testEnv);
+      expect(unpaidRes.status).toBe(402);
+      expect(unpaidRes.headers.get("PAYMENT-REQUIRED")).toBeTruthy();
+      const unpaidBody = (await unpaidRes.json()) as {
+        accepts: Array<{ amount: string }>;
+        extensions?: { bazaar?: { info?: { input?: { method?: string } } } };
+      };
+      expect(unpaidBody.accepts[0]?.amount).toBe("10000");
+      expect(unpaidBody.extensions?.bazaar?.info?.input?.method).toBe("GET");
+
+      const paidRes = await app.request(
+        "/api/v1/x402/pre-trade-check",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "PAYMENT-SIGNATURE": `dev-bypass:${TEST_BYPASS_TOKEN}`,
+          },
+          body: JSON.stringify({
+            walletAddress: "0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1",
+            sellAsset: "ETH",
+            sellAmount: 1,
+            chain: "base",
+            jurisdiction: "US",
+            currentPriceUsd: 3000,
+            lots: [
+              {
+                lotId: "pt-fifo-low",
+                asset: "ETH",
+                quantity: 1,
+                costBasisUsd: 500,
+                acquiredAt: "2024-01-01T00:00:00Z",
+                custodyLocation: "SELF_CUSTODY",
+              },
+              {
+                lotId: "pt-hifo-high",
+                asset: "ETH",
+                quantity: 1,
+                costBasisUsd: 2900,
+                acquiredAt: "2026-03-01T00:00:00Z",
+                custodyLocation: "SELF_CUSTODY",
+              },
+            ],
+          }),
+        },
+        testEnv
+      );
+      expect(paidRes.status).toBe(200);
+      const paidBody = (await paidRes.json()) as {
+        status: string;
+        recommendation: string;
+        taxSavedUsd: number;
+        planId?: string;
+      };
+      expect(paidBody.status).toBe("PRE_TRADE_OPTIMIZED");
+      expect(paidBody.taxSavedUsd).toBeGreaterThan(0);
+      expect(paidBody.planId).toMatch(/^plan_/);
+    });
+
+    it("returns HTTP 402 ($0.005 USDC) on unpaid /api/v1/x402/br-35k-status and computes exempt/breach/offshore rules when paid", async () => {
+      const unpaidRes = await app.request("/api/v1/x402/br-35k-status", undefined, testEnv);
+      expect(unpaidRes.status).toBe(402);
+      expect(unpaidRes.headers.get("PAYMENT-REQUIRED")).toBeTruthy();
+      const unpaidBody = (await unpaidRes.json()) as {
+        accepts: Array<{ amount: string }>;
+      };
+      expect(unpaidBody.accepts[0]?.amount).toBe("5000");
+
+      const exemptRes = await app.request(
+        "/api/v1/x402/br-35k-status?monthlySalesBrl=20000&plannedSaleUsd=2500&custodyLocation=DOMESTIC&usdBrlRate=5.8",
+        {
+          headers: { "PAYMENT-SIGNATURE": `dev-bypass:${TEST_BYPASS_TOKEN}` },
+        },
+        testEnv
+      );
+      expect(exemptRes.status).toBe(200);
+      const exemptBody = (await exemptRes.json()) as {
+        status: string;
+        wouldBreach35kThreshold: boolean;
+        estimatedTaxRatePct: number;
+      };
+      expect(exemptBody.status).toBe("EXEMPT_UNDER_35K");
+      expect(exemptBody.wouldBreach35kThreshold).toBe(false);
+      expect(exemptBody.estimatedTaxRatePct).toBe(0);
+
+      const breachRes = await app.request(
+        "/api/v1/x402/br-35k-status?monthlySalesBrl=30000&plannedSaleUsd=2000&custodyLocation=DOMESTIC&usdBrlRate=5.8",
+        {
+          headers: { "PAYMENT-SIGNATURE": `dev-bypass:${TEST_BYPASS_TOKEN}` },
+        },
+        testEnv
+      );
+      expect(breachRes.status).toBe(200);
+      const breachBody = (await breachRes.json()) as {
+        status: string;
+        wouldBreach35kThreshold: boolean;
+      };
+      expect(breachBody.status).toBe("BREACHES_35K_TAX_APPLIES");
+      expect(breachBody.wouldBreach35kThreshold).toBe(true);
+
+      const offshoreRes = await app.request(
+        "/api/v1/x402/br-35k-status?monthlySalesBrl=0&plannedSaleUsd=500&custodyLocation=OFFSHORE&usdBrlRate=5.8",
+        {
+          headers: { "PAYMENT-SIGNATURE": `dev-bypass:${TEST_BYPASS_TOKEN}` },
+        },
+        testEnv
+      );
+      expect(offshoreRes.status).toBe(200);
+      const offshoreBody = (await offshoreRes.json()) as {
+        status: string;
+        lei14754Applies: boolean;
+        estimatedTaxRatePct: number;
+      };
+      expect(offshoreBody.status).toBe("LEI_14754_FLAT_15PCT");
+      expect(offshoreBody.lei14754Applies).toBe(true);
+      expect(offshoreBody.estimatedTaxRatePct).toBe(15);
     });
 
     it("returns HTTP 402 ($0.01 USDC) on unpaid /api/v1/x402/tlh-scan and structured 200 diagnostic when paid", async () => {

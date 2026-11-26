@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pre-Trade Crypto Tax Optimization on Base for AI Agents (IRS 1099-DA &amp; x402) | TaxRail</title>
+  <meta name="description" content="How autonomous AI agents on Base avoid leaking 15%-37% in avoidable US IRS 1099-DA capital gains before executing DEX swaps using TaxRail MCP and x402 USDC." />
+  <link rel="canonical" href="https://taxrail.online/guides/base-agent-crypto-tax.html" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Pre-Trade Crypto Tax Optimization on Base for Autonomous AI Agents (IRS 1099-DA & Form 8949)",
+    "url": "https://taxrail.online/guides/base-agent-crypto-tax.html",
+    "datePublished": "2026-11-26",
+    "publisher": { "@type": "Organization", "name": "TaxRail", "url": "https://taxrail.online" },
+    "about": ["IRS 1099-DA", "SpecID", "HIFO", "Tax-Loss Harvesting", "x402", "Base", "Aave v3"]
+  }
+  </script>
+  <style>
+    :root { --bg:#070a10; --card:#101624; --border:rgba(255,255,255,.1); --text:#edf2ff; --muted:#9aa7c0; --accent:#4ade80; --cyan:#38bdf8; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); line-height:1.68; }
+    main { max-width:860px; margin:0 auto; padding:48px 24px 72px; }
+    a { color:var(--cyan); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    h1 { font-size:clamp(1.8rem,4vw,2.5rem); line-height:1.18; margin:12px 0 16px; }
+    h2 { font-size:1.35rem; margin:34px 0 12px; color:#fff; }
+    p, li { color:var(--muted); }
+    .badge { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; color:var(--accent); background:rgba(74,222,128,.12); border:1px solid rgba(74,222,128,.3); }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; margin:20px 0; }
+    pre { background:#05070c; border:1px solid var(--border); border-radius:10px; padding:16px; overflow:auto; color:#dbeafe; font-size:13px; }
+    code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:#93c5fd; }
+  </style>
+</head>
+<body>
+  <main>
+    <p><a href="/">← Back to TaxRail</a> · <a href="/guides/brazil-lei-14754-ai-agent.html">Brazil Lei 14.754 Guide →</a></p>
+    <span class="badge">US IRS 1099-DA · BASE · x402 v2</span>
+    <h1>Why Autonomous Trading Agents on Base Should Simulate Taxes Before Every Swap</h1>
+    <p>Under 2025–2026 IRS wallet-by-wallet reporting rules (Form 1099-DA &amp; Form 8949), brokers and custodians default to FIFO (First-In, First-Out) unless a trader or software agent explicitly records Specific Identification (SpecID) / HIFO lot selection <strong>before</strong> settlement. For an autonomous DeFi or treasury agent holding early low-basis ETH alongside recent higher-basis lots, naive FIFO routinely triggers 15%–37% unnecessary tax leakage.</p>
+
+    <div class="card">
+      <h2>3-Step Pre-Trade Tax Guardrail for AI Agents</h2>
+      <ol>
+        <li><strong>$0.01 Pre-Trade Guardrail:</strong> Call <code>GET https://api.taxrail.online/api/v1/x402/pre-trade-check?walletAddress=0x...&amp;sellAsset=ETH&amp;sellAmount=1&amp;chain=base</code> via x402 Base USDC. TaxRail scans on-chain lots, flags imminent 366-day Short-Term → Long-Term tax cliffs, and tests whether borrowing USDC on Aave v3 beats selling appreciated tokens.</li>
+        <li><strong>Free Simulation Preview:</strong> Call <code>POST https://api.taxrail.online/api/v1/check-tax-impact</code> (or MCP tool <code>check_tax_impact</code>) to get deterministic <code>baselineTaxUsd</code>, <code>optimizedTaxUsd</code>, <code>taxSavedUsd</code>, and an unlockable <code>planId</code>.</li>
+        <li><strong>$0.01 Multi-Token Wallet TLH Scan:</strong> Before December 31, run <code>GET https://api.taxrail.online/api/v1/x402/tlh-scan?walletAddress=0x...&amp;chain=base&amp;asset=ALL</code> to harvest unrealized losses across up to 25 tokens in one call.</li>
+      </ol>
+    </div>
+
+    <h2>Python Integration (<code>pip install taxrail</code>)</h2>
+<pre><code>from taxrail import TaxRailClient
+
+client = TaxRailClient(referrer_wallet="0xYourAgentWallet")
+preview = client.check_tax_impact(
+    jurisdiction="US",
+    chain="base",
+    target_asset="ETH",
+    sell_quantity=1.0,
+    wallet_address="0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1",
+)
+print("Tax saved (USD):", preview["taxSavedUsd"], "| Plan ID:", preview["planId"])</code></pre>
+
+    <h2>Machine-Readable Discovery Endpoints</h2>
+    <ul>
+      <li><strong>MCP Streamable HTTP:</strong> <code>https://api.taxrail.online/mcp</code> (<code>npx -y taxrail-mcp</code>)</li>
+      <li><strong>Skill Definition:</strong> <a href="https://api.taxrail.online/SKILL.md">https://api.taxrail.online/SKILL.md</a></li>
+      <li><strong>x402 Discovery Manifest:</strong> <a href="https://api.taxrail.online/.well-known/x402">https://api.taxrail.online/.well-known/x402</a></li>
+      <li><strong>OpenAPI 3.1 Spec:</strong> <a href="https://api.taxrail.online/openapi.json">https://api.taxrail.online/openapi.json</a></li>
+    </ul>
+  </main>
+</body>
+</html>

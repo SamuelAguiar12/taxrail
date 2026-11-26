@@ -337,3 +337,64 @@ export interface FullTaxOptimizationPlan {
   executionNotes: string[];
   disclaimer: string;
 }
+
+export interface PreTradeCheckResult {
+  status:
+    | "PRE_TRADE_OPTIMIZED"
+    | "BORROW_PREFERRED"
+    | "WAIT_FOR_LONG_TERM"
+    | "NO_TAX_IMPACT"
+    | "NEEDS_LOT_HISTORY";
+  recommendation:
+    | "BORROW_AAVE_V3"
+    | "WAIT_FOR_LONG_TERM"
+    | "SELL_OPTIMIZED_HIFO"
+    | "SELL_ZERO_TAX"
+    | "PROVIDE_EXPLICIT_LOTS";
+  walletAddress: string;
+  chain: SupportedChain;
+  sellAsset: string;
+  sellAmount: number;
+  currentPriceUsd: number | null;
+  jurisdiction: Jurisdiction;
+  regime: TaxRegime;
+  lotsScanned: number;
+  baselineTaxUsd: number;
+  optimizedTaxUsd: number;
+  taxSavedUsd: number;
+  longTermCliffWarning: string | null;
+  borrowVsSellComparison?: {
+    recommendation: "BORROW_AAVE_V3" | "SELL_OPTIMIZED_LOTS";
+    sellTaxCostUsd: number;
+    netBorrowCostUsd: number;
+    taxSavedUsd: number;
+    projectedLtvPct: number;
+  };
+  planId?: string;
+  borrowPlanId?: string;
+  upfrontUnlockCostUsd?: number;
+  warnings: string[];
+  agentGuidance: string;
+  disclaimer: string;
+}
+
+export interface Br35kStatusResult {
+  status: "EXEMPT_UNDER_35K" | "BREACHES_35K_TAX_APPLIES" | "LEI_14754_FLAT_15PCT";
+  custodyLocation: "DOMESTIC" | "OFFSHORE";
+  monthlySalesBrl: number;
+  plannedSaleBrl: number;
+  projectedTotalBrl: number;
+  thresholdBrl: number;
+  remainingExemptBrl: number;
+  remainingExemptUsd: number;
+  wouldBreach35kThreshold: boolean;
+  lei14754Applies: boolean;
+  estimatedTaxRatePct: number;
+  estimatedTaxIfSoldNowBrl: number;
+  estimatedTaxIfSoldNowUsd: number;
+  recommendedMaxSaleThisMonthUsd: number;
+  usdBrlRate: number;
+  ruleSummary: string;
+  agentGuidance: string;
+  disclaimer: string;
+}

@@ -40,6 +40,7 @@ flowchart LR
 | `packages/execution` | Non-custodial payload builders (`0x_v2`, `cow_swap`, `jupiter`, `aave_v3`) & accounting dossiers |
 | `packages/mcp-cli` | Local stdio MCP server (`taxrail-mcp`) |
 | `packages/agent-plugins` | Coinbase AgentKit `ActionProvider`, LangChain structured tools, and declarative n8n node spec |
+| `packages/python-sdk` | Zero-dependency Python SDK (`pip install taxrail`) with OpenAI, LangChain & CrewAI wrappers |
 | `apps/edge-worker` | Cloudflare Workers + Hono API, remote `/mcp` endpoint, and `@x402/hono` payment gating |
 | `scripts/export-revenue-ledger.ts` | Base USDC ledger -> BRL PTAX converter & Simples Nacional (Fator R / PGDAS-D) exporter |
 
@@ -98,6 +99,8 @@ Add to Claude Desktop, Cursor, or any MCP-compatible agent runtime:
 - **Remote MCP:** `POST https://api.taxrail.online/mcp`
 - **Portable Agent Skill (`SKILL.md`):** `https://api.taxrail.online/SKILL.md` (committed in [`skills/taxrail-crypto-tax/SKILL.md`](skills/taxrail-crypto-tax/SKILL.md) for OpenClaw/ClawHub, Claude Code, Codex, Cursor)
 - **REST Endpoints:**
+  - `GET /api/v1/x402/pre-trade-check?walletAddress=0x...&sellAsset=ETH&sellAmount=1` (**$0.01 USDC** pre-swap HIFO savings, 366-day ST→LT cliff warning & Aave v3 borrow-vs-sell check via x402)
+  - `GET /api/v1/x402/br-35k-status?monthlySalesBrl=20000&plannedSaleUsd=2500&custodyLocation=DOMESTIC` (**$0.005 USDC** Brazil R$35k monthly domestic exemption vs Lei 14.754 flat 15% check via x402)
   - `GET /api/v1/x402/tlh-scan?walletAddress=0x...&chain=base&asset=ALL` (**$0.01 USDC** 1-parameter multi-asset wallet TLH & tax-risk scanner covering up to 25 volatile tokens via x402, with per-token `planId`s)
   - `POST /api/v1/x402/optimize` (**$0.10 USDC** 1-step full optimization + calldata + dossier via x402)
   - `POST /api/v1/check-tax-impact` (Free preview -> dynamic `unlock-plan`)
