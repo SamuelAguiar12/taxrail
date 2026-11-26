@@ -757,7 +757,7 @@ describe("TaxRail Edge Worker", () => {
       Accept: "application/json, text/event-stream",
     };
 
-    it("handles JSON-RPC initialize and tools/list returning all 4 TaxRail tools", async () => {
+    it("handles JSON-RPC initialize and tools/list returning all 7 TaxRail tools", async () => {
       const initRes = await app.request(
         "/mcp",
         {
@@ -809,9 +809,106 @@ describe("TaxRail Edge Worker", () => {
           "compare_borrow_vs_sell",
           "classify_deductible_expense",
           "unlock_tax_plan",
+          "scan_wallet_tlh",
+          "pre_trade_check",
+          "check_br_35k_status",
         ])
       );
-      expect(toolNames).toHaveLength(4);
+      expect(toolNames).toHaveLength(7);
+
+      // New MCP tools enforce x402 402 unpaid and return structured 200 when paid
+      const brMcpUnpaid = await app.request(
+        "/mcp",
+        {
+          method: "POST",
+          headers: mcpHeaders,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 20,
+            method: "tools/call",
+            params: {
+              name: "check_br_35k_status",
+              arguments: { monthlySalesBrl: 20000, plannedSaleUsd: 2500, custodyLocation: "DOMESTIC" },
+            },
+          }),
+        },
+        testEnv
+      );
+      expect(brMcpUnpaid.status).toBe(200);
+      const brUnpaidRpc = (await brMcpUnpaid.json()) as {
+        result?: { isError?: boolean; content: Array<{ text: string }> };
+      };
+      expect(brUnpaidRpc.result?.isError).toBe(true);
+      expect(JSON.parse(brUnpaidRpc.result!.content[0]!.text).status).toBe(402);
+
+      const brMcpPaid = await app.request(
+        "/mcp",
+        {
+          method: "POST",
+          headers: mcpHeaders,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 21,
+            method: "tools/call",
+            params: {
+              name: "check_br_35k_status",
+              arguments: {
+                monthlySalesBrl: 20000,
+                plannedSaleUsd: 2500,
+                custodyLocation: "DOMESTIC",
+                paymentSignature: `dev-bypass:${TEST_BYPASS_TOKEN}`,
+              },
+            },
+          }),
+        },
+        testEnv
+      );
+      expect(brMcpPaid.status).toBe(200);
+      const brPaidRpc = (await brMcpPaid.json()) as {
+        result?: { isError?: boolean; content: Array<{ text: string }> };
+      };
+      expect(brPaidRpc.result?.isError).toBeFalsy();
+      expect(JSON.parse(brPaidRpc.result!.content[0]!.text).status).toBe("EXEMPT_UNDER_35K");
+    });
+
+    it("normalizes minimal AI payloads on POST /api/v1/check-tax-impact and returns examplePayload on 400", async () => {
+      const tolerantRes = await app.request(
+        "/api/v1/check-tax-impact",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            asset: "ETH",
+            amount: "1",
+            currentPriceUsd: 3000,
+            lots: [
+              {
+                lotId: "norm-lot-1",
+                asset: "ETH",
+                quantity: 1,
+                costBasisUsd: 1000,
+                acquiredAt: "2026-01-01T00:00:00Z",
+                custodyLocation: "SELF_CUSTODY",
+              },
+            ],
+          }),
+        },
+        testEnv
+      );
+      expect(tolerantRes.status).toBe(200);
+
+      const badRes = await app.request(
+        "/api/v1/check-tax-impact",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: JSON.stringify({ hello: "world" }),
+        },
+        testEnv
+      );
+      expect(badRes.status).toBe(400);
+      const badBody = (await badRes.json()) as { examplePayload?: { targetAsset?: string } };
+      expect(badBody.examplePayload?.targetAsset).toBe("ETH");
     });
 
     it("executes check_tax_impact and unlock_tax_plan over MCP tools/call", async () => {

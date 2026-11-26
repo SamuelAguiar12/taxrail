@@ -10,13 +10,22 @@ import {
 } from "@taxrail/shared";
 import { z } from "zod";
 import type { Env } from "./env.js";
+import { recordPaidReceipt } from "./feedback.js";
 import type { PlanStore } from "./plan-store.js";
 import {
   executeBorrowVsSell,
+  executeBr35kStatus,
   executeCheckTaxImpact,
   executeClassifyExpense,
+  executePreTradeCheck,
+  executeWalletTlhScan,
 } from "./service.js";
-import { verifyUnlockPayment } from "./x402.js";
+import {
+  verifyBr35kStatusPayment,
+  verifyPreTradeCheckPayment,
+  verifyTlhScanPayment,
+  verifyUnlockPayment,
+} from "./x402.js";
 
 const UnlockTaxPlanToolSchema = UnlockPlanInputSchema.extend({
   paymentSignature: z
@@ -25,6 +34,45 @@ const UnlockTaxPlanToolSchema = UnlockPlanInputSchema.extend({
     .describe(
       "Optional x402 v2 PAYMENT-SIGNATURE / X-PAYMENT base64 payload to settle dynamic fee"
     ),
+});
+
+const ScanWalletTlhToolSchema = z.object({
+  walletAddress: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/)
+    .describe("EVM wallet address (0x...) to scan for year-end TLH and HIFO tax savings"),
+  chain: z.enum(["base", "ethereum", "arbitrum"]).optional(),
+  asset: z.string().optional().describe("Token symbol or ALL (default ALL, scans up to 25 tokens)"),
+  jurisdiction: z.enum(["US", "BR"]).optional(),
+  referrerWallet: z.string().optional(),
+  paymentSignature: z
+    .string()
+    .optional()
+    .describe("x402 v2 PAYMENT-SIGNATURE payload ($0.01 USDC on Base)"),
+});
+
+const PreTradeCheckToolSchema = z.object({
+  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+  sellAsset: z.string().min(1).describe("Token symbol to sell or swap (e.g. ETH, AERO, WBTC)"),
+  sellAmount: z.number().positive(),
+  chain: z.enum(["base", "ethereum", "arbitrum"]).optional(),
+  jurisdiction: z.enum(["US", "BR"]).optional(),
+  referrerWallet: z.string().optional(),
+  paymentSignature: z
+    .string()
+    .optional()
+    .describe("x402 v2 PAYMENT-SIGNATURE payload ($0.01 USDC on Base)"),
+});
+
+const CheckBr35kStatusToolSchema = z.object({
+  monthlySalesBrl: z.number().nonnegative().default(0),
+  plannedSaleUsd: z.number().nonnegative().default(1000),
+  custodyLocation: z.enum(["DOMESTIC", "OFFSHORE"]).default("DOMESTIC"),
+  usdBrlRate: z.number().positive().optional(),
+  paymentSignature: z
+    .string()
+    .optional()
+    .describe("x402 v2 PAYMENT-SIGNATURE payload ($0.005 USDC on Base)"),
 });
 
 function jsonToolSuccess(payload: unknown) {
@@ -51,7 +99,7 @@ function jsonToolError(payload: unknown) {
 }
 
 /**
- * Creates a stateless per-request McpServer instance wired with all 4 TaxRail tools.
+ * Creates a stateless per-request McpServer instance wired with all 7 TaxRail tools.
  */
 export function createTaxRailMcpServer(deps: {
   planStore: PlanStore;
@@ -168,7 +216,162 @@ export function createTaxRailMcpServer(deps: {
         });
       }
 
+      if (paymentResult.record.pricing.upfrontX402Usd > 0) {
+        await recordPaidReceipt(deps.env, {
+          settlementTx: paymentResult.settlementTx,
+          tier: "10PCT_UNLOCK",
+          amountUsd: paymentResult.record.pricing.upfrontX402Usd,
+          taxSavedUsd: paymentResult.record.pricing.taxSavedUsd,
+          planId: paymentResult.record.plan.planId,
+        });
+      }
+
       return jsonToolSuccess(paymentResult.record.plan);
+    }
+  );
+
+  server.registerTool(
+    "scan_wallet_tlh",
+    {
+      title: "Scan Wallet for Year-End TLH & Tax Savings ($0.01 x402)",
+      description:
+        "Scans up to 25 volatile tokens in an EVM wallet (Base/Ethereum/Arbitrum) for year-end Tax-Loss Harvesting candidates and HIFO/SpecID tax savings. Requires $0.01 USDC x402 `paymentSignature` on Base.",
+      inputSchema: ScanWalletTlhToolSchema,
+    },
+    async (args) => {
+      const paymentResult = await verifyTlhScanPayment({
+        paymentHeader: args.paymentSignature,
+        env: deps.env,
+        requestUrl: deps.requestUrl,
+      });
+
+      if (paymentResult.status !== "paid") {
+        return jsonToolError({
+          status: 402,
+          error:
+            paymentResult.status === "payment_required"
+              ? "Payment Required ($0.01 USDC via x402)"
+              : paymentResult.reason,
+          paymentRequired: paymentResult.paymentRequired,
+          paymentRequiredHeader: paymentResult.paymentRequiredHeader,
+        });
+      }
+
+      const scan = await executeWalletTlhScan(
+        {
+          walletAddress: args.walletAddress,
+          chain: args.chain ?? "base",
+          asset: args.asset ?? "ALL",
+          jurisdiction: args.jurisdiction ?? "US",
+          ...(args.referrerWallet ? { referrerWallet: args.referrerWallet } : {}),
+        },
+        deps
+      );
+
+      await recordPaidReceipt(deps.env, {
+        settlementTx: paymentResult.settlementTx,
+        tier: "TLH_SCAN",
+        amountUsd: 0.01,
+        taxSavedUsd: scan.estimatedTaxSavingsUsd,
+        planId: scan.planId,
+      });
+
+      return jsonToolSuccess(scan);
+    }
+  );
+
+  server.registerTool(
+    "pre_trade_check",
+    {
+      title: "Pre-Trade Swap/Sell Tax Guardrail ($0.01 x402)",
+      description:
+        "Run right before executing a DEX swap or sell: checks HIFO vs FIFO savings, 366-day US ST->LT tax cliffs, and Aave v3 borrow-vs-sell comparison. Requires $0.01 USDC x402 `paymentSignature` on Base.",
+      inputSchema: PreTradeCheckToolSchema,
+    },
+    async (args) => {
+      const paymentResult = await verifyPreTradeCheckPayment({
+        paymentHeader: args.paymentSignature,
+        env: deps.env,
+        requestUrl: deps.requestUrl,
+      });
+
+      if (paymentResult.status !== "paid") {
+        return jsonToolError({
+          status: 402,
+          error:
+            paymentResult.status === "payment_required"
+              ? "Payment Required ($0.01 USDC via x402)"
+              : paymentResult.reason,
+          paymentRequired: paymentResult.paymentRequired,
+          paymentRequiredHeader: paymentResult.paymentRequiredHeader,
+        });
+      }
+
+      const check = await executePreTradeCheck(
+        {
+          walletAddress: args.walletAddress,
+          sellAsset: args.sellAsset,
+          sellAmount: args.sellAmount,
+          chain: args.chain ?? "base",
+          jurisdiction: args.jurisdiction ?? "US",
+          ...(args.referrerWallet ? { referrerWallet: args.referrerWallet } : {}),
+        },
+        deps
+      );
+
+      await recordPaidReceipt(deps.env, {
+        settlementTx: paymentResult.settlementTx,
+        tier: "PRE_TRADE_CHECK",
+        amountUsd: 0.01,
+        taxSavedUsd: check.taxSavedUsd,
+        planId: check.planId,
+      });
+
+      return jsonToolSuccess(check);
+    }
+  );
+
+  server.registerTool(
+    "check_br_35k_status",
+    {
+      title: "Brazil R$35k Exemption & Lei 14.754 Check ($0.005 x402)",
+      description:
+        "Calculates remaining R$35,000 monthly domestic crypto exemption vs Lei 14.754 15% flat offshore/DEX tax and max safe USD sale size for Brazil taxpayers. Requires $0.005 USDC x402 `paymentSignature` on Base.",
+      inputSchema: CheckBr35kStatusToolSchema,
+    },
+    async (args) => {
+      const paymentResult = await verifyBr35kStatusPayment({
+        paymentHeader: args.paymentSignature,
+        env: deps.env,
+        requestUrl: deps.requestUrl,
+      });
+
+      if (paymentResult.status !== "paid") {
+        return jsonToolError({
+          status: 402,
+          error:
+            paymentResult.status === "payment_required"
+              ? "Payment Required ($0.005 USDC via x402)"
+              : paymentResult.reason,
+          paymentRequired: paymentResult.paymentRequired,
+          paymentRequiredHeader: paymentResult.paymentRequiredHeader,
+        });
+      }
+
+      const status = executeBr35kStatus({
+        monthlySalesBrl: args.monthlySalesBrl,
+        plannedSaleUsd: args.plannedSaleUsd,
+        custodyLocation: args.custodyLocation,
+        ...(args.usdBrlRate !== undefined ? { usdBrlRate: args.usdBrlRate } : {}),
+      });
+
+      await recordPaidReceipt(deps.env, {
+        settlementTx: paymentResult.settlementTx,
+        tier: "BR_35K_STATUS",
+        amountUsd: 0.005,
+      });
+
+      return jsonToolSuccess(status);
     }
   );
 

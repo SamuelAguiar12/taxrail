@@ -45,9 +45,119 @@ import {
   verifyUnlockPayment,
 } from "./x402.js";
 
+const EXAMPLE_CHECK_TAX_IMPACT_PAYLOAD = {
+  jurisdiction: "US",
+  regime: "INDIVIDUAL",
+  chain: "base",
+  targetAsset: "ETH",
+  sellQuantity: 1,
+  walletAddress: "0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1",
+};
+
+const EXAMPLE_BORROW_VS_SELL_PAYLOAD = {
+  jurisdiction: "US",
+  regime: "INDIVIDUAL",
+  chain: "base",
+  collateralAsset: "ETH",
+  collateralAmount: 2,
+  collateralPriceUsd: 3000,
+  collateralCostBasisUsd: 800,
+  holdingDays: 365,
+  liquidityNeededUsd: 2500,
+};
+
+const EXAMPLE_CLASSIFY_EXPENSE_PAYLOAD = {
+  jurisdiction: "US",
+  regime: "C_CORP",
+  vendorName: "OpenAI",
+  description: "API compute usage",
+  amountUsd: 500,
+};
+
+function normalizeCheckTaxImpactPayload(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const obj: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+
+  const rawJur =
+    typeof obj.jurisdiction === "string" ? obj.jurisdiction.trim().toUpperCase() : "US";
+  obj.jurisdiction = rawJur === "BR" ? "BR" : "US";
+
+  if (typeof obj.regime !== "string" || !obj.regime.trim()) {
+    obj.regime = obj.jurisdiction === "BR" ? "PF_LEI_14754" : "INDIVIDUAL";
+  }
+
+  if (!obj.walletAddress) {
+    if (typeof obj.address === "string") obj.walletAddress = obj.address;
+    else if (typeof obj.wallet === "string") obj.walletAddress = obj.wallet;
+  }
+
+  if (typeof obj.walletAddress === "string") {
+    obj.walletAddress = obj.walletAddress.trim();
+  }
+
+  if (!obj.targetAsset) {
+    const aliasAsset = obj.asset ?? obj.token ?? obj.sellAsset;
+    if (typeof aliasAsset === "string" && aliasAsset.trim()) {
+      obj.targetAsset = aliasAsset.trim().toUpperCase();
+    } else if (typeof obj.walletAddress === "string" && /^0x[a-fA-F0-9]{40}$/.test(obj.walletAddress)) {
+      obj.targetAsset = "ETH";
+    }
+  }
+
+  if (obj.sellQuantity === undefined) {
+    const aliasQty = obj.sellAmount ?? obj.amount ?? obj.quantity;
+    if (typeof aliasQty === "number") {
+      obj.sellQuantity = aliasQty;
+    } else if (typeof aliasQty === "string" && aliasQty.trim() && Number.isFinite(Number(aliasQty))) {
+      obj.sellQuantity = Number(aliasQty);
+    } else if (
+      obj.targetProceedsUsd === undefined &&
+      typeof obj.walletAddress === "string" &&
+      /^0x[a-fA-F0-9]{40}$/.test(obj.walletAddress)
+    ) {
+      obj.sellQuantity = 1;
+    }
+  }
+
+  if (typeof obj.currentPriceUsd === "string" && Number.isFinite(Number(obj.currentPriceUsd))) {
+    obj.currentPriceUsd = Number(obj.currentPriceUsd);
+  }
+
+  return obj;
+}
+
+function normalizeBorrowVsSellPayload(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const obj: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+
+  const rawJur =
+    typeof obj.jurisdiction === "string" ? obj.jurisdiction.trim().toUpperCase() : "US";
+  obj.jurisdiction = rawJur === "BR" ? "BR" : "US";
+
+  if (typeof obj.regime !== "string" || !obj.regime.trim()) {
+    obj.regime = obj.jurisdiction === "BR" ? "PF_LEI_14754" : "INDIVIDUAL";
+  }
+
+  if (obj.holdingDays === undefined) {
+    obj.holdingDays = 365;
+  }
+  if (!obj.collateralAsset && typeof obj.collateral === "string") {
+    obj.collateralAsset = obj.collateral;
+  }
+  if (obj.collateralAmount === undefined && typeof obj.amount === "number") {
+    obj.collateralAmount = obj.amount;
+  }
+  if (obj.liquidityNeededUsd === undefined && typeof obj.liquidityUsd === "number") {
+    obj.liquidityNeededUsd = obj.liquidityUsd;
+  }
+
+  return obj;
+}
+
 async function parseAndValidateBody<TSchema extends z.ZodType>(
   request: Request,
-  schema: TSchema
+  schema: TSchema,
+  normalize?: (raw: unknown) => unknown
 ): Promise<
   | { ok: true; data: z.infer<TSchema> }
   | { ok: false; error: string; issues?: unknown }
@@ -59,7 +169,8 @@ async function parseAndValidateBody<TSchema extends z.ZodType>(
     return { ok: false, error: "Invalid JSON request body" };
   }
 
-  const parsed = schema.safeParse(raw);
+  const normalized = normalize ? normalize(raw) : raw;
+  const parsed = schema.safeParse(normalized);
   if (!parsed.success) {
     return {
       ok: false,
@@ -295,9 +406,20 @@ export function createApp(): Hono<{ Bindings: Env }> {
 
   // Free Step 1 preview endpoints
   app.post("/api/v1/check-tax-impact", async (c) => {
-    const parsed = await parseAndValidateBody(c.req.raw, CheckTaxImpactRequestSchema);
+    const parsed = await parseAndValidateBody(
+      c.req.raw,
+      CheckTaxImpactRequestSchema,
+      normalizeCheckTaxImpactPayload
+    );
     if (!parsed.ok) {
-      return c.json({ error: parsed.error, issues: parsed.issues }, 400);
+      return c.json(
+        {
+          error: parsed.error,
+          issues: parsed.issues,
+          examplePayload: EXAMPLE_CHECK_TAX_IMPACT_PAYLOAD,
+        },
+        400
+      );
     }
 
     try {
@@ -327,9 +449,20 @@ export function createApp(): Hono<{ Bindings: Env }> {
   });
 
   app.post("/api/v1/borrow-vs-sell", async (c) => {
-    const parsed = await parseAndValidateBody(c.req.raw, BorrowVsSellInputSchema);
+    const parsed = await parseAndValidateBody(
+      c.req.raw,
+      BorrowVsSellInputSchema,
+      normalizeBorrowVsSellPayload
+    );
     if (!parsed.ok) {
-      return c.json({ error: parsed.error, issues: parsed.issues }, 400);
+      return c.json(
+        {
+          error: parsed.error,
+          issues: parsed.issues,
+          examplePayload: EXAMPLE_BORROW_VS_SELL_PAYLOAD,
+        },
+        400
+      );
     }
 
     try {
@@ -353,7 +486,14 @@ export function createApp(): Hono<{ Bindings: Env }> {
       DeductibleExpenseInputSchema
     );
     if (!parsed.ok) {
-      return c.json({ error: parsed.error, issues: parsed.issues }, 400);
+      return c.json(
+        {
+          error: parsed.error,
+          issues: parsed.issues,
+          examplePayload: EXAMPLE_CLASSIFY_EXPENSE_PAYLOAD,
+        },
+        400
+      );
     }
 
     try {
@@ -495,9 +635,20 @@ export function createApp(): Hono<{ Bindings: Env }> {
       return c.json(body, 402);
     }
 
-    const parsed = await parseAndValidateBody(c.req.raw, CheckTaxImpactRequestSchema);
+    const parsed = await parseAndValidateBody(
+      c.req.raw,
+      CheckTaxImpactRequestSchema,
+      normalizeCheckTaxImpactPayload
+    );
     if (!parsed.ok) {
-      return c.json({ error: parsed.error, issues: parsed.issues }, 400);
+      return c.json(
+        {
+          error: parsed.error,
+          issues: parsed.issues,
+          examplePayload: EXAMPLE_CHECK_TAX_IMPACT_PAYLOAD,
+        },
+        400
+      );
     }
 
     try {

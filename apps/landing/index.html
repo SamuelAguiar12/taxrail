@@ -155,6 +155,31 @@
     }
     .review-meta { font-family: var(--mono); font-size: 0.76rem; color: var(--accent-2); margin-bottom: 6px; }
     .review-comment { font-size: 0.9rem; color: var(--text); margin: 0; }
+    .calc-panel {
+      background: linear-gradient(180deg, rgba(16,185,129,0.06) 0%, var(--surface) 45%);
+      border: 1px solid rgba(16,185,129,0.38); border-radius: 18px; padding: 24px;
+      margin: 10px 0 30px; box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+    }
+    .calc-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+    .calc-tab {
+      background: var(--surface-2); color: var(--muted); border: 1px solid var(--border);
+      padding: 8px 14px; border-radius: 9px; cursor: pointer; font-size: 0.84rem; font-weight: 600;
+    }
+    .calc-tab.active { background: rgba(16,185,129,0.16); color: #6ee7b7; border-color: rgba(16,185,129,0.5); }
+    .calc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .field label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
+    .field input, .field select {
+      width: 100%; background: #070b12; color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 9px 11px; font-size: 0.86rem; font-family: var(--mono);
+    }
+    .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+    .calc-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+    .calc-unlock-bar {
+      background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.3);
+      border-radius: 10px; padding: 12px 14px; margin-top: 12px;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .calc-note { font-size: 0.84rem; color: var(--muted); margin: 8px 0 0; }
     footer {
       border-top: 1px solid var(--border); padding: 28px 0 42px; margin-top: 32px;
       color: var(--muted); font-size: 0.84rem;
@@ -227,6 +252,131 @@
           </div>
           <button class="btn" onclick="copyText('pip install taxrail', this)">Copy</button>
         </div>
+      </div>
+    </section>
+
+    <section class="calc-panel" id="free-calculator">
+      <div class="badge" style="margin-bottom:10px;">FREE 2026 YEAR-END TAX SAVER · NO SIGNUP REQUIRED</div>
+      <h2 class="section-title">Calculate How Much Tax You Leak Before Swapping</h2>
+      <p class="section-sub" style="margin-bottom:16px;">Simulates live on-chain Base/Ethereum/Arbitrum lots &amp; IRS 1099-DA / Brazil Lei 14.754 rules via <code>api.taxrail.online</code>. Pay 10% only if you choose to unlock execution calldata &amp; dossier.</p>
+
+      <div class="calc-tabs">
+        <button class="calc-tab active" data-tab="wallet" onclick="switchCalcTab('wallet')">1. Wallet Tax &amp; HIFO Scanner</button>
+        <button class="calc-tab" data-tab="br35k" onclick="switchCalcTab('br35k')">2. Brazil R$35k &amp; Lei 14.754</button>
+        <button class="calc-tab" data-tab="borrow" onclick="switchCalcTab('borrow')">3. Aave v3 Borrow vs. Sell</button>
+      </div>
+
+      <div id="tab-wallet">
+        <div class="calc-grid">
+          <div class="field" style="grid-column: span 2;">
+            <label for="cw-addr">EVM Wallet Address (0x...)</label>
+            <input id="cw-addr" type="text" placeholder="0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1" value="0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1" />
+          </div>
+          <div class="field">
+            <label for="cw-chain">Chain</label>
+            <select id="cw-chain">
+              <option value="base" selected>Base</option>
+              <option value="ethereum">Ethereum</option>
+              <option value="arbitrum">Arbitrum</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="cw-asset">Token to Sell</label>
+            <input id="cw-asset" type="text" value="ETH" />
+          </div>
+          <div class="field">
+            <label for="cw-qty">Sell Quantity</label>
+            <input id="cw-qty" type="number" step="0.01" min="0.001" value="1" />
+          </div>
+          <div class="field">
+            <label for="cw-jur">Jurisdiction</label>
+            <select id="cw-jur">
+              <option value="US" selected>US (IRS 1099-DA)</option>
+              <option value="BR">Brazil (Lei 14.754)</option>
+            </select>
+          </div>
+        </div>
+        <div class="calc-actions">
+          <button class="btn btn-primary" onclick="runFreeWalletScan()">Scan Wallet Savings Free</button>
+          <button class="btn" onclick="document.getElementById('cw-addr').value='0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1'; runFreeWalletScan();">Try Sample Base Wallet</button>
+        </div>
+      </div>
+
+      <div id="tab-br35k" style="display:none;">
+        <div class="calc-grid">
+          <div class="field">
+            <label for="br-month">Monthly Sales So Far (R$)</label>
+            <input id="br-month" type="number" step="100" min="0" value="20000" />
+          </div>
+          <div class="field">
+            <label for="br-planned">Planned Next Sale (USD)</label>
+            <input id="br-planned" type="number" step="50" min="0" value="2500" />
+          </div>
+          <div class="field">
+            <label for="br-fx">USD/BRL FX Rate</label>
+            <input id="br-fx" type="number" step="0.05" min="1" value="5.80" />
+          </div>
+          <div class="field">
+            <label for="br-custody">Custody / Venue</label>
+            <select id="br-custody">
+              <option value="DOMESTIC" selected>Brazil Exchange (PF_DOMESTIC)</option>
+              <option value="OFFSHORE">DEX / Offshore CEX (Lei 14.754)</option>
+            </select>
+          </div>
+        </div>
+        <div class="calc-actions">
+          <button class="btn btn-primary" onclick="runBr35kCalc()">Check R$35k &amp; Tax Headroom</button>
+        </div>
+      </div>
+
+      <div id="tab-borrow" style="display:none;">
+        <div class="calc-grid">
+          <div class="field">
+            <label for="bv-asset">Collateral Asset</label>
+            <input id="bv-asset" type="text" value="ETH" />
+          </div>
+          <div class="field">
+            <label for="bv-amt">Collateral Qty</label>
+            <input id="bv-amt" type="number" step="0.1" min="0.01" value="4" />
+          </div>
+          <div class="field">
+            <label for="bv-price">Spot Price (USD)</label>
+            <input id="bv-price" type="number" step="10" min="1" value="3200" />
+          </div>
+          <div class="field">
+            <label for="bv-basis">Cost Basis / Unit (USD)</label>
+            <input id="bv-basis" type="number" step="10" min="0" value="900" />
+          </div>
+          <div class="field">
+            <label for="bv-need">Liquidity Needed (USD)</label>
+            <input id="bv-need" type="number" step="50" min="1" value="5000" />
+          </div>
+          <div class="field">
+            <label for="bv-jur">Jurisdiction</label>
+            <select id="bv-jur">
+              <option value="US" selected>US (Individual)</option>
+              <option value="BR">Brazil (Lei 14.754)</option>
+            </select>
+          </div>
+        </div>
+        <div class="calc-actions">
+          <button class="btn btn-primary" onclick="runBorrowVsSellCalc()">Simulate Borrow vs. Sell</button>
+        </div>
+      </div>
+
+      <div class="metrics" id="calc-metrics" style="display:none; margin-top: 8px;">
+        <div class="metric"><span id="cm-l1">Naive FIFO Tax</span><strong id="cm-v1">-</strong></div>
+        <div class="metric"><span id="cm-l2">Optimized Tax</span><strong id="cm-v2">-</strong></div>
+        <div class="metric"><span id="cm-l3">Tax Saved</span><strong id="cm-v3">-</strong></div>
+        <div class="metric"><span id="cm-l4">Unlock Fee (10%)</span><strong id="cm-v4">-</strong></div>
+      </div>
+      <p class="calc-note" id="calc-summary">Select any calculator tab above and click simulate to see instant deterministic tax savings.</p>
+      <div class="calc-unlock-bar" id="calc-unlock-bar" style="display:none;">
+        <div>
+          <span class="copy-label">Ready to Execute? Unlock SpecID Lots, Calldata &amp; Dossier</span>
+          <span class="copy-val" id="calc-unlock-cmd">-</span>
+        </div>
+        <button class="btn" id="calc-unlock-copy" onclick="copyText(document.getElementById('calc-unlock-cmd').textContent, this)">Copy Unlock Command</button>
       </div>
     </section>
 
@@ -494,6 +644,151 @@
         out.textContent = JSON.stringify(data, null, 2);
       } catch (err) {
         out.textContent = `Request failed: ${err}`;
+      }
+    }
+
+    function switchCalcTab(tab) {
+      ["wallet", "br35k", "borrow"].forEach((id) => {
+        document.getElementById(`tab-${id}`).style.display = id === tab ? "block" : "none";
+      });
+      document.querySelectorAll(".calc-tab").forEach((btn) => {
+        btn.classList.toggle("active", btn.getAttribute("data-tab") === tab);
+      });
+    }
+
+    function setCalcResult(labels, vals, summary, unlockCmd) {
+      document.getElementById("calc-metrics").style.display = "grid";
+      for (let i = 0; i < 4; i++) {
+        document.getElementById(`cm-l${i + 1}`).textContent = labels[i];
+        document.getElementById(`cm-v${i + 1}`).textContent = vals[i];
+      }
+      document.getElementById("calc-summary").textContent = summary;
+      const bar = document.getElementById("calc-unlock-bar");
+      if (unlockCmd) {
+        document.getElementById("calc-unlock-cmd").textContent = unlockCmd;
+        bar.style.display = "flex";
+      } else {
+        bar.style.display = "none";
+      }
+    }
+
+    async function runFreeWalletScan() {
+      const addr = document.getElementById("cw-addr").value.trim();
+      const chain = document.getElementById("cw-chain").value;
+      const asset = document.getElementById("cw-asset").value.trim().toUpperCase() || "ETH";
+      const qty = Number(document.getElementById("cw-qty").value || 1);
+      const jur = document.getElementById("cw-jur").value;
+      const summary = document.getElementById("calc-summary");
+      summary.textContent = "Scanning on-chain wallet lots on " + chain + "...";
+      document.getElementById("calc-unlock-bar").style.display = "none";
+
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/check-tax-impact`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            walletAddress: addr,
+            chain,
+            targetAsset: asset,
+            sellQuantity: qty,
+            jurisdiction: jur,
+            regime: jur === "BR" ? "PF_LEI_14754" : "INDIVIDUAL",
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          summary.textContent = `Check returned ${res.status}: ${data.error || "Invalid wallet or parameters"}`;
+          return;
+        }
+        const unlockCmd = data.planId
+          ? `curl -X POST ${API_BASE}/api/v1/unlock-plan -H "Content-Type: application/json" -d '{"planId":"${data.planId}"}'`
+          : null;
+        setCalcResult(
+          ["Naive FIFO Tax", "TaxRail HIFO Tax", "Verified Saved", "Unlock Fee (x402)"],
+          [
+            `$${Number(data.baselineTaxUsd ?? 0).toFixed(2)}`,
+            `$${Number(data.optimizedTaxUsd ?? 0).toFixed(2)}`,
+            `$${Number(data.taxSavedUsd ?? 0).toFixed(2)}`,
+            `$${Number(data.pricing?.upfrontX402Usd ?? 0).toFixed(2)}`,
+          ],
+          data.agentGuidance || "Simulation complete.",
+          unlockCmd
+        );
+      } catch (err) {
+        summary.textContent = `Request failed: ${err}`;
+      }
+    }
+
+    function runBr35kCalc() {
+      const monthBrl = Math.max(0, Number(document.getElementById("br-month").value || 0));
+      const plannedUsd = Math.max(0, Number(document.getElementById("br-planned").value || 0));
+      const fx = Math.max(1, Number(document.getElementById("br-fx").value || 5.8));
+      const custody = document.getElementById("br-custody").value;
+      const threshold = 35000;
+      const plannedBrl = plannedUsd * fx;
+      const projectedBrl = monthBrl + plannedBrl;
+      const remBefore = Math.max(0, threshold - monthBrl);
+      const maxSafeUsd = custody === "OFFSHORE" ? 0 : remBefore / fx;
+      const taxRate = custody === "OFFSHORE" || projectedBrl > threshold ? "15%" : "0%";
+      const statusText =
+        custody === "OFFSHORE"
+          ? "Lei 14.754 (Offshore/DEX): No R$35k exemption — 15% flat tax on annual net gains. Consider TLH or Aave v3 borrow."
+          : projectedBrl <= threshold
+            ? `Exempt under R$35k! You still have R$ ${(threshold - projectedBrl).toFixed(2)} remaining this month.`
+            : `STOP or SPLIT: Total hits R$ ${projectedBrl.toFixed(2)} (> R$ 35,000). Sell at most $${maxSafeUsd.toFixed(2)} USD this month to stay tax-free.`;
+
+      const cmd = `curl -i "${API_BASE}/api/v1/x402/br-35k-status?monthlySalesBrl=${monthBrl}&plannedSaleUsd=${plannedUsd}&custodyLocation=${custody}&usdBrlRate=${fx}"`;
+      setCalcResult(
+        ["Projected Month (R$)", "Tax Rate Applied", "Max Safe Sale (USD)", "x402 Check Cost"],
+        [`R$ ${projectedBrl.toFixed(0)}`, taxRate, `$${maxSafeUsd.toFixed(2)}`, "$0.005"],
+        statusText,
+        cmd
+      );
+    }
+
+    async function runBorrowVsSellCalc() {
+      const asset = document.getElementById("bv-asset").value.trim().toUpperCase() || "ETH";
+      const amt = Number(document.getElementById("bv-amt").value || 4);
+      const price = Number(document.getElementById("bv-price").value || 3200);
+      const basis = Number(document.getElementById("bv-basis").value || 900);
+      const need = Number(document.getElementById("bv-need").value || 5000);
+      const jur = document.getElementById("bv-jur").value;
+      const summary = document.getElementById("calc-summary");
+      summary.textContent = "Comparing capital gains tax vs. Aave v3 borrow cost...";
+
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/borrow-vs-sell`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jurisdiction: jur,
+            regime: jur === "BR" ? "PF_LEI_14754" : "INDIVIDUAL",
+            chain: "base",
+            collateralAsset: asset,
+            collateralAmount: amt,
+            collateralPriceUsd: price,
+            collateralCostBasisUsd: basis,
+            holdingDays: 180,
+            liquidityNeededUsd: need,
+          }),
+        });
+        const data = await res.json();
+        const cmd = data.planId
+          ? `curl -X POST ${API_BASE}/api/v1/unlock-plan -H "Content-Type: application/json" -d '{"planId":"${data.planId}"}'`
+          : null;
+        setCalcResult(
+          ["Sell Tax Cost", "Aave Net Borrow Cost", "Tax Saved", "Projected LTV"],
+          [
+            `$${Number(data.sellTaxCostUsd ?? 0).toFixed(2)}`,
+            `$${Number(data.netBorrowCostUsd ?? 0).toFixed(2)}`,
+            `$${Number(data.taxSavedUsd ?? 0).toFixed(2)}`,
+            `${Number(data.projectedLtvPct ?? 0).toFixed(1)}%`,
+          ],
+          `Recommendation: ${data.recommendation} — ${data.agentGuidance || ""}`,
+          cmd
+        );
+      } catch (err) {
+        summary.textContent = `Request failed: ${err}`;
       }
     }
 
