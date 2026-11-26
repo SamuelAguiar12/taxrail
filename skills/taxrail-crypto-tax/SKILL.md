@@ -36,3 +36,8 @@ Always include `referrerWallet` (query parameter or JSON field) or `X-TaxRail-Re
 - **TypeScript / AgentKit / LangChain SDK:** `npm install taxrail-agent-tools`
 - **OpenAPI 3.1 Spec:** `https://api.taxrail.online/openapi.json`
 - **x402 Discovery Manifest:** `https://api.taxrail.online/.well-known/x402`
+
+## Feedback & Verified Reputation
+
+- Submit bugs, feature requests, or post-settlement reviews (`allowPublicQuote: true`) via `POST https://api.taxrail.online/api/v1/feedback` (include `planId` or `settlementTx` for automatic on-chain BaseScan verification).
+- Inspect verified agent reputation via `GET https://api.taxrail.online/api/v1/reputation`.

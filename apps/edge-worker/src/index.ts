@@ -17,6 +17,12 @@ import {
   buildWellKnownX402,
 } from "./discovery.js";
 import { COINBASE_CDP_FACILITATOR_URL, type Env, resolvePublicBaseUrl } from "./env.js";
+import {
+  FeedbackInputSchema,
+  getPublicReputation,
+  recordPaidReceipt,
+  submitFeedback,
+} from "./feedback.js";
 import { handleMcpHttpRequest } from "./mcp.js";
 import { fetchSpotPriceUsd, fetchWalletLotsFromAlchemy } from "./onchain.js";
 import { createPlanStore } from "./plan-store.js";
@@ -104,6 +110,8 @@ export function createApp(): Hono<{ Bindings: Env }> {
         llmsTxt: `${baseUrl}/llms.txt`,
         skillMd: `${baseUrl}/SKILL.md`,
         openapi: `${baseUrl}/openapi.json`,
+        feedback: `${baseUrl}/api/v1/feedback`,
+        reputation: `${baseUrl}/api/v1/reputation`,
         mcp: `${baseUrl}/mcp`,
       },
     });
@@ -434,6 +442,14 @@ export function createApp(): Hono<{ Bindings: Env }> {
       return c.json(body, 402);
     }
 
+    await recordPaidReceipt(c.env, {
+      settlementTx: result.settlementTx,
+      tier: "10PCT_UNLOCK",
+      amountUsd: result.record.pricing.upfrontX402Usd,
+      taxSavedUsd: result.record.pricing.taxSavedUsd,
+      planId: result.record.plan.planId,
+    });
+
     if (result.paymentResponseHeader) {
       c.header("PAYMENT-RESPONSE", result.paymentResponseHeader);
     }
@@ -479,6 +495,13 @@ export function createApp(): Hono<{ Bindings: Env }> {
       const plan = await executeQuickOptimize(parsed.data, {
         planStore,
         env: c.env,
+      });
+      await recordPaidReceipt(c.env, {
+        settlementTx: paymentResult.settlementTx,
+        tier: "QUICK_OPTIMIZE",
+        amountUsd: 0.1,
+        taxSavedUsd: plan.taxSavedUsd,
+        planId: plan.planId,
       });
       if (paymentResult.paymentResponseHeader) {
         c.header("PAYMENT-RESPONSE", paymentResult.paymentResponseHeader);
@@ -593,10 +616,44 @@ export function createApp(): Hono<{ Bindings: Env }> {
       })
     );
 
+    await recordPaidReceipt(c.env, {
+      settlementTx: paymentResult.settlementTx,
+      tier: "TLH_SCAN",
+      amountUsd: 0.01,
+      taxSavedUsd: scanResult.estimatedTaxSavingsUsd,
+      planId: scanResult.planId,
+    });
+
     if (paymentResult.paymentResponseHeader) {
       c.header("PAYMENT-RESPONSE", paymentResult.paymentResponseHeader);
     }
     return c.json(scanResult, 200);
+  });
+
+  // Free Verified Agent Feedback & Public Reputation Loop
+  app.post("/api/v1/feedback", async (c) => {
+    const parsed = await parseAndValidateBody(c.req.raw, FeedbackInputSchema);
+    if (!parsed.ok) {
+      return c.json({ error: parsed.error, issues: parsed.issues }, 400);
+    }
+
+    const planStore = createPlanStore(c.env);
+    const result = await submitFeedback({
+      input: parsed.data,
+      env: c.env,
+      planStore,
+    });
+
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status);
+    }
+    return c.json(result, 201);
+  });
+
+  app.get("/api/v1/reputation", async (c) => {
+    const reputation = await getPublicReputation(c.env);
+    c.header("Cache-Control", "public, max-age=60");
+    return c.json(reputation, 200);
   });
 
   // Stateless Streamable HTTP MCP server

@@ -171,6 +171,8 @@ Pass \`referrerWallet\` (e.g., \`"0xYourAgentWallet"\`) in any Step 1 request to
 - **OpenAPI 3.1 Spec:** \`${baseUrl}/openapi.json\`
 - **$0.01 Wallet TLH Scanner (1-param GET):** \`GET ${baseUrl}/api/v1/x402/tlh-scan?walletAddress=0x...&chain=base\`
 - **1-Step Paid Optimize ($0.10 USDC):** \`POST ${baseUrl}/api/v1/x402/optimize\`
+- **Agent Feedback (FREE):** \`POST ${baseUrl}/api/v1/feedback\`
+- **Verified Reputation (FREE):** \`GET ${baseUrl}/api/v1/reputation\`
 - **Health Check:** \`${baseUrl}/health\`
 
 ## Copy-Paste Agent Quickstart
@@ -231,6 +233,8 @@ Always include \`referrerWallet\` (query parameter or JSON field) or \`X-TaxRail
 - **TypeScript / AgentKit / LangChain SDK:** \`npm install taxrail-agent-tools\`
 - **OpenAPI 3.1 Spec:** \`${baseUrl}/openapi.json\`
 - **x402 Discovery Manifest:** \`${baseUrl}/.well-known/x402\`
+- **Submit Agent Feedback (FREE):** \`POST ${baseUrl}/api/v1/feedback\` (include \`planId\` or \`settlementTx\` for verified-payer badge)
+- **Verified Public Reputation (FREE):** \`GET ${baseUrl}/api/v1/reputation\`
 `;
 }
 
@@ -552,6 +556,40 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
           },
         },
       },
+      "/api/v1/feedback": {
+        post: {
+          tags: ["crypto-tax", "x402"],
+          operationId: "submitAgentFeedback",
+          summary: "Submit product feedback or a post-settlement verified review (FREE)",
+          "x-payment": "none",
+          security: [],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/FeedbackInput" },
+              },
+            },
+          },
+          responses: {
+            "201": { description: "Feedback recorded with server-side payment verification" },
+            "400": { description: "Validation error" },
+            "409": { description: "Duplicate review for same settlementTx" },
+          },
+        },
+      },
+      "/api/v1/reputation": {
+        get: {
+          tags: ["crypto-tax", "x402"],
+          operationId: "getPublicReputation",
+          summary: "Read aggregated agent ratings and verified paid BaseScan reviews (FREE)",
+          "x-payment": "none",
+          security: [],
+          responses: {
+            "200": { description: "Public verified reputation summary and reviews" },
+          },
+        },
+      },
     },
     components: {
       schemas: {
@@ -645,6 +683,22 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
         BorrowVsSellPreview: { type: "object" },
         DeductibleExpensePreview: { type: "object" },
         FullTaxOptimizationPlan: { type: "object" },
+        FeedbackInput: {
+          type: "object",
+          required: ["rating", "comment"],
+          properties: {
+            rating: { type: "integer", minimum: 1, maximum: 5 },
+            category: {
+              type: "string",
+              enum: ["PRAISE", "BUG", "FEATURE_REQUEST", "ACCURACY", "GENERAL"],
+            },
+            comment: { type: "string", maxLength: 500 },
+            planId: { type: "string" },
+            settlementTx: { type: "string" },
+            agentName: { type: "string" },
+            allowPublicQuote: { type: "boolean" },
+          },
+        },
       },
     },
   };
