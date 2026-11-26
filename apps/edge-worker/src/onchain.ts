@@ -445,21 +445,15 @@ export async function fetchWalletPortfolioFromAlchemy(params: {
       if (idxB !== -1) return 1;
       return (grouped.get(b)?.length ?? 0) - (grouped.get(a)?.length ?? 0);
     })
-    .slice(0, 5);
+    .slice(0, 25);
 
-  const spotResults = await Promise.allSettled(
-    rankedSymbols.map(async (sym) => ({
-      sym,
-      spot: await fetchSpotPriceUsd(sym, params.alchemyApiKey),
-    }))
-  );
-
-  const historicalBudget = { remaining: 12 };
+  const spotMap = await fetchBatchSpotPricesUsd(rankedSymbols, params.alchemyApiKey);
+  const historicalBudget = { remaining: 14 };
   const assets: PortfolioAssetLots[] = [];
 
-  for (const res of spotResults) {
-    if (res.status !== "fulfilled") continue;
-    const { sym, spot } = res.value;
+  for (const sym of rankedSymbols) {
+    const spot = spotMap.get(sym);
+    if (!spot) continue;
     const transfersChronological = [...(grouped.get(sym) ?? [])].reverse();
     if (transfersChronological.length === 0) continue;
 
@@ -482,6 +476,75 @@ export async function fetchWalletPortfolioFromAlchemy(params: {
   }
 
   return { assets, warnings: [] };
+}
+
+/**
+ * Fetches USD spot prices for up to 25 tokens in a single Alchemy Prices API call,
+ * keeping Cloudflare Workers subrequest usage tiny during multi-asset wallet scans.
+ */
+export async function fetchBatchSpotPricesUsd(
+  symbols: string[],
+  alchemyApiKey?: string
+): Promise<Map<string, { priceUsd: number; source: "alchemy" | "coinbase" }>> {
+  const result = new Map<string, { priceUsd: number; source: "alchemy" | "coinbase" }>();
+  const uniqueSymbols = Array.from(
+    new Set(symbols.map((s) => normalizeSymbol(s)).filter(Boolean))
+  ).slice(0, 25);
+
+  if (uniqueSymbols.length === 0) return result;
+
+  if (alchemyApiKey) {
+    try {
+      const query = new URLSearchParams();
+      for (const sym of uniqueSymbols) {
+        query.append("symbols", sym);
+      }
+      const url = `https://api.g.alchemy.com/prices/v1/${encodeURIComponent(
+        alchemyApiKey
+      )}/tokens/by-symbol?${query.toString()}`;
+      const res = await fetch(url, {
+        headers: { Accept: "application/json" },
+      });
+      if (res.ok) {
+        const json = (await res.json()) as {
+          data?: Array<{
+            symbol?: string;
+            prices?: Array<{ currency?: string; value?: string }>;
+          }>;
+        };
+        for (const entry of json.data ?? []) {
+          const sym = entry.symbol ? normalizeSymbol(entry.symbol) : "";
+          const usdEntry = entry.prices?.find(
+            (p) => p.currency?.toUpperCase() === "USD" && p.value
+          );
+          const parsed = usdEntry?.value ? Number(usdEntry.value) : NaN;
+          if (sym && Number.isFinite(parsed) && parsed > 0) {
+            result.set(sym, { priceUsd: parsed, source: "alchemy" });
+          }
+        }
+        if (result.size > 0) {
+          return result;
+        }
+      }
+    } catch {
+      // Fall through to bounded Coinbase fallback below
+    }
+  }
+
+  // Fallback for up to 3 top symbols if Alchemy batch is unavailable
+  const fallbackTargets = uniqueSymbols.slice(0, 3);
+  const settled = await Promise.allSettled(
+    fallbackTargets.map(async (sym) => ({
+      sym,
+      spot: await fetchSpotPriceUsd(sym, alchemyApiKey),
+    }))
+  );
+  for (const item of settled) {
+    if (item.status === "fulfilled") {
+      result.set(item.value.sym, item.value.spot);
+    }
+  }
+  return result;
 }
 
 /**

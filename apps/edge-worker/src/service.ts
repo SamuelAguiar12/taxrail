@@ -40,6 +40,7 @@ import { DEFAULT_PLAN_TTL_SECONDS, type PlanStore } from "./plan-store.js";
 export interface TaxRailServiceDeps {
   planStore: PlanStore;
   env: Env;
+  skipLive0xQuote?: boolean;
 }
 
 function buildWindowTimestamps(ttlSeconds: number = DEFAULT_PLAN_TTL_SECONDS): {
@@ -165,7 +166,7 @@ async function prepareCryptoOptimizationPlan(
       takerAddress: input.walletAddress,
     });
 
-    if (swapIntent.venue === "0x_v2" && deps.env.ZEROX_API_KEY) {
+    if (swapIntent.venue === "0x_v2" && deps.env.ZEROX_API_KEY && !deps.skipLive0xQuote) {
       const live0x = await fetchLive0xQuote({
         chain,
         sellAsset: input.targetAsset,
@@ -557,7 +558,7 @@ export async function executeWalletTlhScan(
         lots: item.lots,
         ...(params.referrerWallet ? { referrerWallet: params.referrerWallet } : {}),
       },
-      deps
+      { ...deps, skipLive0xQuote: true }
     );
     warnings.push(...preview.warnings);
 

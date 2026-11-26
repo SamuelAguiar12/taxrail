@@ -487,7 +487,7 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
               name: "asset",
               in: "query",
               required: false,
-              description: "Default: ALL — scans all volatile tokens in wallet and returns savings + unlockable planId per token",
+              description: "Default: ALL — scans up to 25 volatile tokens in wallet and returns savings + unlockable planId per token",
               schema: { type: "string", default: "ALL" },
             },
             {
