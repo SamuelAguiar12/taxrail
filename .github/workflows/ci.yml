@@ -25,13 +25,16 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile || pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Run typecheck across workspace
         run: pnpm typecheck
 
       - name: Run tests across workspace
         run: pnpm test
+
+      - name: Run Python SDK tests
+        run: PYTHONPATH=packages/python-sdk python3 -m unittest discover -s packages/python-sdk/tests -v
 
       - name: Cloudflare Workers deploy dry-run
         run: pnpm deploy:dry-run
