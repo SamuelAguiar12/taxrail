@@ -287,6 +287,37 @@ export function createApp(): Hono<{ Bindings: Env }> {
     });
   });
 
+  app.get("/robots.txt", (c) => {
+    const baseUrl = resolvePublicBaseUrl(c.env, c.req.url);
+    const body = [
+      "User-agent: *",
+      "Allow: /",
+      "",
+      "User-agent: GPTBot",
+      "Allow: /",
+      "",
+      "User-agent: ChatGPT-User",
+      "Allow: /",
+      "",
+      "User-agent: ClaudeBot",
+      "Allow: /",
+      "",
+      "User-agent: PerplexityBot",
+      "Allow: /",
+      "",
+      "User-agent: Google-Extended",
+      "Allow: /",
+      "",
+      `Sitemap: https://taxrail.online/sitemap.xml`,
+      `Sitemap: ${baseUrl}/llms.txt`,
+      "",
+    ].join("\n");
+    return c.text(body, 200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "public, max-age=86400",
+    });
+  });
+
   app.get("/favicon.ico", (c) => {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#062c22"/><rect x="2" y="2" width="60" height="60" rx="12" fill="none" stroke="#10b981" stroke-width="3"/><text x="32" y="42" text-anchor="middle" font-family="ui-sans-serif,system-ui,-apple-system,sans-serif" font-size="28" font-weight="800" fill="#34d399">TR</text></svg>`;
     return c.body(svg, 200, {

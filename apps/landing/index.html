@@ -390,6 +390,34 @@
           </div>
         </div>
         <p id="unlocked-meta" style="margin:0 0 10px; font-size:0.84rem; color:var(--muted);"></p>
+        <div id="unlocked-review-box" style="display:none; margin:0 0 12px; padding:12px; background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.28); border-radius:10px;">
+          <strong style="display:block; font-size:0.84rem; color:#6ee7b7; margin-bottom:8px;">Post Verified Review (Linked to Your BaseScan Settlement)</strong>
+          <div class="calc-grid" style="margin-bottom:8px;">
+            <div class="field">
+              <label for="rev-rating">Rating</label>
+              <select id="rev-rating">
+                <option value="5" selected>5 ★ — Excellent savings</option>
+                <option value="4">4 ★ — Good</option>
+                <option value="3">3 ★ — Neutral</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="rev-agent">Trader / Agent Name (optional)</label>
+              <input id="rev-agent" type="text" placeholder="Base Treasury / Trader" />
+            </div>
+            <div class="field" style="grid-column: span 2;">
+              <label for="rev-comment">Comment (public verified quote)</label>
+              <input id="rev-comment" type="text" value="Unlocked HIFO lot plan and accounting CSV with 0 gas on Base USDC." />
+            </div>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <label style="font-size:0.8rem; color:var(--muted); display:flex; align-items:center; gap:6px; cursor:pointer;">
+              <input id="rev-public" type="checkbox" checked /> Publish on TaxRail Reputation with BaseScan proof
+            </label>
+            <button class="btn btn-primary" id="btn-submit-review" onclick="submitUnlockedReview()">Submit Verified Review</button>
+          </div>
+          <p id="rev-status" style="margin:8px 0 0; font-size:0.8rem; color:var(--muted);"></p>
+        </div>
         <pre id="unlocked-json" style="max-height:260px;"></pre>
       </div>
     </section>
@@ -706,11 +734,14 @@
 
     function renderUnlockedDossier(plan, txHash) {
       window.__unlockedTaxRailPlan = plan;
+      window.__unlockedSettlementTx = txHash || null;
       const panel = document.getElementById("calc-unlocked-panel");
       const title = document.getElementById("unlocked-title");
       const meta = document.getElementById("unlocked-meta");
       const csvBtn = document.getElementById("btn-dl-csv");
       const jsonPre = document.getElementById("unlocked-json");
+      const revBox = document.getElementById("unlocked-review-box");
+      const revStatus = document.getElementById("rev-status");
 
       title.textContent = `Unlocked: ${plan.planId} (${plan.accountingDossier?.format || plan.planType})`;
       meta.textContent = `Verified Savings: $${Number(plan.taxSavedUsd ?? 0).toFixed(2)} · Baseline $${Number(plan.baselineTaxUsd ?? 0).toFixed(2)} -> Optimized $${Number(plan.optimizedTaxUsd ?? 0).toFixed(2)}`;
@@ -722,10 +753,62 @@
         proof.rel = "noopener noreferrer";
         proof.textContent = "BaseScan Settlement ↗";
         meta.appendChild(proof);
+        revBox.style.display = "block";
+        revStatus.textContent = "";
+      } else {
+        revBox.style.display = "none";
       }
       csvBtn.style.display = plan.accountingDossier?.csvExport ? "inline-block" : "none";
       jsonPre.textContent = JSON.stringify(plan, null, 2);
       panel.style.display = "block";
+    }
+
+    async function submitUnlockedReview() {
+      const plan = window.__unlockedTaxRailPlan;
+      const txHash = window.__unlockedSettlementTx;
+      const statusEl = document.getElementById("rev-status");
+      const btn = document.getElementById("btn-submit-review");
+      if (!plan || !plan.planId) return;
+
+      const rating = Number(document.getElementById("rev-rating").value || 5);
+      const agentName = document.getElementById("rev-agent").value.trim();
+      const comment = document.getElementById("rev-comment").value.trim();
+      const allowPublicQuote = Boolean(document.getElementById("rev-public").checked);
+      if (comment.length < 4) {
+        statusEl.textContent = "Please write a short comment before submitting.";
+        return;
+      }
+
+      btn.disabled = true;
+      statusEl.textContent = "Submitting verified review...";
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/feedback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rating,
+            category: "PRAISE",
+            comment,
+            planId: plan.planId,
+            ...(txHash ? { settlementTx: txHash } : {}),
+            ...(agentName ? { agentName } : {}),
+            allowPublicQuote,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          statusEl.textContent = `Feedback failed (${res.status}): ${data.error || "Unknown error"}`;
+          return;
+        }
+        statusEl.textContent = data.verifiedPaid
+          ? "Verified paid review published with BaseScan proof! Refreshing public reputation..."
+          : "Feedback recorded!";
+        loadReputation();
+      } catch (err) {
+        statusEl.textContent = `Request failed: ${err}`;
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     function downloadTextFile(filename, content, mime) {

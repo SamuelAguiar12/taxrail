@@ -62,6 +62,15 @@ describe("TaxRail Edge Worker", () => {
       expect(text).toContain("referrerWallet");
     });
 
+    it("serves GET /robots.txt allowing AI/search crawlers", async () => {
+      const res = await app.request("/robots.txt", undefined, testEnv);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toContain("text/plain");
+      const text = await res.text();
+      expect(text).toContain("User-agent: *");
+      expect(text).toContain("Allow: /");
+    });
+
     it("serves GET /favicon.ico for x402scan and browsers", async () => {
       const res = await app.request("/favicon.ico", undefined, testEnv);
       expect(res.status).toBe(200);
