@@ -56,6 +56,31 @@ function getRemoteBaseUrl(): string | undefined {
   return url ? url.replace(/\/$/, "") : undefined;
 }
 
+function getApiBaseUrl(): string {
+  return getRemoteBaseUrl() || "https://api.taxrail.online";
+}
+
+async function getRemoteJson(
+  baseUrl: string,
+  path: string,
+  headers: Record<string, string> = {}
+): Promise<{ status: number; headers: Headers; data: unknown }> {
+  const res = await fetch(`${baseUrl}${path}`, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      ...headers,
+    },
+  });
+  let data: unknown;
+  try {
+    data = await res.json();
+  } catch {
+    data = { error: await res.text() };
+  }
+  return { status: res.status, headers: res.headers, data };
+}
+
 function getTreasuryWallet(): string {
   return process.env.TAXRAIL_PAY_TO_ADDRESS?.trim() || DEFAULT_PAY_TO;
 }
@@ -297,7 +322,7 @@ function runLocalClassifyExpense(input: DeductibleExpenseInput) {
 export function createStdioMcpServer(): McpServer {
   const server = new McpServer({
     name: "taxrail-mcp",
-    version: "0.1.0",
+    version: "0.2.0",
   });
 
   server.registerTool(
@@ -444,6 +469,141 @@ export function createStdioMcpServer(): McpServer {
         planId: args.planId,
         paymentRequired,
       });
+    }
+  );
+
+  const ScanWalletTlhSchema = z.object({
+    walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+    chain: z.enum(["base", "ethereum", "arbitrum"]).optional(),
+    asset: z.string().optional(),
+    jurisdiction: z.enum(["US", "BR"]).optional(),
+    referrerWallet: z.string().optional(),
+    paymentSignature: z.string().optional(),
+  });
+
+  server.registerTool(
+    "scan_wallet_tlh",
+    {
+      title: "Scan Wallet for Year-End TLH & Tax Savings ($0.01 x402)",
+      description:
+        "Scans up to 25 volatile tokens in an EVM wallet (Base/Ethereum/Arbitrum) for year-end TLH and HIFO tax savings ($0.01 USDC x402 on Base).",
+      inputSchema: ScanWalletTlhSchema,
+    },
+    async (args) => {
+      const qs = new URLSearchParams({
+        walletAddress: args.walletAddress,
+        chain: args.chain ?? "base",
+        asset: args.asset ?? "ALL",
+        jurisdiction: args.jurisdiction ?? "US",
+        ...(args.referrerWallet ? { referrerWallet: args.referrerWallet } : {}),
+      });
+      const paymentHeader =
+        args.paymentSignature?.trim() ||
+        (process.env.TAXRAIL_DEV_BYPASS ? `dev-bypass:${process.env.TAXRAIL_DEV_BYPASS}` : undefined);
+      const res = await getRemoteJson(
+        getApiBaseUrl(),
+        `/api/v1/x402/tlh-scan?${qs.toString()}`,
+        paymentHeader ? { "PAYMENT-SIGNATURE": paymentHeader } : {}
+      );
+      if (res.status === 402) {
+        return textError({
+          status: 402,
+          error: "Payment Required ($0.01 USDC via x402)",
+          paymentRequired: res.data,
+          paymentRequiredHeader: res.headers.get("PAYMENT-REQUIRED"),
+        });
+      }
+      return res.status >= 400 ? textError(res.data) : textSuccess(res.data);
+    }
+  );
+
+  const PreTradeCheckSchema = z.object({
+    walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+    sellAsset: z.string().min(1),
+    sellAmount: z.number().positive(),
+    chain: z.enum(["base", "ethereum", "arbitrum"]).optional(),
+    jurisdiction: z.enum(["US", "BR"]).optional(),
+    referrerWallet: z.string().optional(),
+    paymentSignature: z.string().optional(),
+  });
+
+  server.registerTool(
+    "pre_trade_check",
+    {
+      title: "Pre-Trade Swap/Sell Tax Guardrail ($0.01 x402)",
+      description:
+        "Checks HIFO vs FIFO savings, 366-day US ST->LT cliffs, and Aave v3 borrow-vs-sell before swapping ($0.01 USDC x402 on Base).",
+      inputSchema: PreTradeCheckSchema,
+    },
+    async (args) => {
+      const qs = new URLSearchParams({
+        walletAddress: args.walletAddress,
+        sellAsset: args.sellAsset,
+        sellAmount: String(args.sellAmount),
+        chain: args.chain ?? "base",
+        jurisdiction: args.jurisdiction ?? "US",
+        ...(args.referrerWallet ? { referrerWallet: args.referrerWallet } : {}),
+      });
+      const paymentHeader =
+        args.paymentSignature?.trim() ||
+        (process.env.TAXRAIL_DEV_BYPASS ? `dev-bypass:${process.env.TAXRAIL_DEV_BYPASS}` : undefined);
+      const res = await getRemoteJson(
+        getApiBaseUrl(),
+        `/api/v1/x402/pre-trade-check?${qs.toString()}`,
+        paymentHeader ? { "PAYMENT-SIGNATURE": paymentHeader } : {}
+      );
+      if (res.status === 402) {
+        return textError({
+          status: 402,
+          error: "Payment Required ($0.01 USDC via x402)",
+          paymentRequired: res.data,
+          paymentRequiredHeader: res.headers.get("PAYMENT-REQUIRED"),
+        });
+      }
+      return res.status >= 400 ? textError(res.data) : textSuccess(res.data);
+    }
+  );
+
+  const Br35kStatusSchema = z.object({
+    monthlySalesBrl: z.number().nonnegative().default(0),
+    plannedSaleUsd: z.number().nonnegative().default(1000),
+    custodyLocation: z.enum(["DOMESTIC", "OFFSHORE"]).default("DOMESTIC"),
+    usdBrlRate: z.number().positive().optional(),
+    paymentSignature: z.string().optional(),
+  });
+
+  server.registerTool(
+    "check_br_35k_status",
+    {
+      title: "Brazil R$35k Exemption & Lei 14.754 Check ($0.005 x402)",
+      description:
+        "Calculates remaining R$35k monthly domestic exemption vs Lei 14.754 15% flat tax and max safe USD sale size ($0.005 USDC x402 on Base).",
+      inputSchema: Br35kStatusSchema,
+    },
+    async (args) => {
+      const qs = new URLSearchParams({
+        monthlySalesBrl: String(args.monthlySalesBrl),
+        plannedSaleUsd: String(args.plannedSaleUsd),
+        custodyLocation: args.custodyLocation,
+        ...(args.usdBrlRate !== undefined ? { usdBrlRate: String(args.usdBrlRate) } : {}),
+      });
+      const paymentHeader =
+        args.paymentSignature?.trim() ||
+        (process.env.TAXRAIL_DEV_BYPASS ? `dev-bypass:${process.env.TAXRAIL_DEV_BYPASS}` : undefined);
+      const res = await getRemoteJson(
+        getApiBaseUrl(),
+        `/api/v1/x402/br-35k-status?${qs.toString()}`,
+        paymentHeader ? { "PAYMENT-SIGNATURE": paymentHeader } : {}
+      );
+      if (res.status === 402) {
+        return textError({
+          status: 402,
+          error: "Payment Required ($0.005 USDC via x402)",
+          paymentRequired: res.data,
+          paymentRequiredHeader: res.headers.get("PAYMENT-REQUIRED"),
+        });
+      }
+      return res.status >= 400 ? textError(res.data) : textSuccess(res.data);
     }
   );
 

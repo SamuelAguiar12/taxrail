@@ -5,11 +5,13 @@ import {
   UnlockPlanInputSchema,
   type BorrowVsSellInput,
   type BorrowVsSellPreview,
+  type Br35kStatusResult,
   type CheckTaxImpactInput,
   type CheckTaxImpactRedactedResponse,
   type DeductibleExpenseInput,
   type DeductibleExpensePreview,
   type FullTaxOptimizationPlan,
+  type PreTradeCheckResult,
   type PricingTier,
   type WalletTlhScanResult,
 } from "@taxrail/shared";
@@ -92,6 +94,22 @@ export interface TaxRailClient {
     paymentSignature?: string;
     referrerWallet?: string;
   }): Promise<WalletTlhScanResult | PaymentRequiredChallenge>;
+  preTradeCheck(params: {
+    walletAddress: string;
+    sellAsset: string;
+    sellAmount: number;
+    chain?: "base" | "ethereum" | "arbitrum";
+    jurisdiction?: "US" | "BR";
+    paymentSignature?: string;
+    referrerWallet?: string;
+  }): Promise<PreTradeCheckResult | PaymentRequiredChallenge>;
+  checkBr35kStatus(params: {
+    monthlySalesBrl?: number;
+    plannedSaleUsd?: number;
+    custodyLocation?: "DOMESTIC" | "OFFSHORE";
+    usdBrlRate?: number;
+    paymentSignature?: string;
+  }): Promise<Br35kStatusResult | PaymentRequiredChallenge>;
 }
 
 export interface TaxRailToolSpec<TSchema extends z.ZodTypeAny, TResult> {
@@ -200,6 +218,45 @@ export function createTaxRailClient(
     return parsed as TResponse;
   }
 
+  async function getX402Json<TResponse>(
+    endpoint: string,
+    instructions: string,
+    opts: { paymentSignature?: string; referrerWallet?: string } = {}
+  ): Promise<TResponse | PaymentRequiredChallenge> {
+    const referrerWallet = opts.referrerWallet ?? config.referrerWallet;
+    const response = await fetchImpl(`${baseUrl}${endpoint}`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        ...config.headers,
+        ...(referrerWallet ? { "X-TaxRail-Referrer": referrerWallet } : {}),
+        ...(opts.paymentSignature
+          ? {
+              "PAYMENT-SIGNATURE": opts.paymentSignature,
+              "X-PAYMENT": opts.paymentSignature,
+            }
+          : {}),
+      },
+    });
+
+    const parsed = await parseResponseBody(response);
+    if (response.status === 402) {
+      return {
+        status: 402,
+        paymentRequired: true,
+        paymentHeader:
+          response.headers.get("PAYMENT-REQUIRED") ??
+          response.headers.get("X-PAYMENT-REQUIRED"),
+        body: parsed,
+        instructions,
+      };
+    }
+    if (!response.ok) {
+      throw new TaxRailApiError(response.status, endpoint, parsed);
+    }
+    return parsed as TResponse;
+  }
+
   return {
     baseUrl,
     referrerWallet: config.referrerWallet,
@@ -258,7 +315,7 @@ export function createTaxRailClient(
       );
     },
 
-    async scanWalletTlh(params) {
+    scanWalletTlh(params) {
       const qs = new URLSearchParams({
         walletAddress: params.walletAddress,
         ...(params.chain ? { chain: params.chain } : {}),
@@ -269,40 +326,44 @@ export function createTaxRailClient(
       if (referrerWallet) {
         qs.set("referrerWallet", referrerWallet);
       }
+      return getX402Json<WalletTlhScanResult>(
+        `/api/v1/x402/tlh-scan?${qs.toString()}`,
+        "Settle the $0.01 Base USDC (eip155:8453) x402 payment and retry scanWalletTlh with paymentSignature.",
+        params
+      );
+    },
 
-      const endpoint = `/api/v1/x402/tlh-scan?${qs.toString()}`;
-      const response = await fetchImpl(`${baseUrl}${endpoint}`, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          ...config.headers,
-          ...(referrerWallet ? { "X-TaxRail-Referrer": referrerWallet } : {}),
-          ...(params.paymentSignature
-            ? {
-                "PAYMENT-SIGNATURE": params.paymentSignature,
-                "X-PAYMENT": params.paymentSignature,
-              }
-            : {}),
-        },
+    preTradeCheck(params) {
+      const qs = new URLSearchParams({
+        walletAddress: params.walletAddress,
+        sellAsset: params.sellAsset,
+        sellAmount: String(params.sellAmount),
+        ...(params.chain ? { chain: params.chain } : {}),
+        ...(params.jurisdiction ? { jurisdiction: params.jurisdiction } : {}),
       });
+      const referrerWallet = params.referrerWallet ?? config.referrerWallet;
+      if (referrerWallet) {
+        qs.set("referrerWallet", referrerWallet);
+      }
+      return getX402Json<PreTradeCheckResult>(
+        `/api/v1/x402/pre-trade-check?${qs.toString()}`,
+        "Settle the $0.01 Base USDC (eip155:8453) x402 payment and retry preTradeCheck with paymentSignature.",
+        params
+      );
+    },
 
-      const parsed = await parseResponseBody(response);
-      if (response.status === 402) {
-        return {
-          status: 402,
-          paymentRequired: true,
-          paymentHeader:
-            response.headers.get("PAYMENT-REQUIRED") ??
-            response.headers.get("X-PAYMENT-REQUIRED"),
-          body: parsed,
-          instructions:
-            "Settle the $0.01 Base USDC (eip155:8453) x402 payment and retry scanWalletTlh with paymentSignature.",
-        };
-      }
-      if (!response.ok) {
-        throw new TaxRailApiError(response.status, endpoint, parsed);
-      }
-      return parsed as WalletTlhScanResult;
+    checkBr35kStatus(params) {
+      const qs = new URLSearchParams({
+        monthlySalesBrl: String(params.monthlySalesBrl ?? 0),
+        plannedSaleUsd: String(params.plannedSaleUsd ?? 1000),
+        custodyLocation: params.custodyLocation ?? "DOMESTIC",
+        ...(params.usdBrlRate !== undefined ? { usdBrlRate: String(params.usdBrlRate) } : {}),
+      });
+      return getX402Json<Br35kStatusResult>(
+        `/api/v1/x402/br-35k-status?${qs.toString()}`,
+        "Settle the $0.005 Base USDC (eip155:8453) x402 payment and retry checkBr35kStatus with paymentSignature.",
+        params
+      );
     },
   };
 }

@@ -376,7 +376,21 @@
           <span class="copy-label">Ready to Execute? Unlock SpecID Lots, Calldata &amp; Dossier</span>
           <span class="copy-val" id="calc-unlock-cmd">-</span>
         </div>
-        <button class="btn" id="calc-unlock-copy" onclick="copyText(document.getElementById('calc-unlock-cmd').textContent, this)">Copy Unlock Command</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="btn btn-primary" id="calc-wallet-unlock-btn" style="display:none;" onclick="unlockActivePlanWithWallet()">Connect Wallet &amp; Unlock (0 Gas)</button>
+          <button class="btn" id="calc-unlock-copy" onclick="copyText(document.getElementById('calc-unlock-cmd').textContent, this)">Copy Unlock Command</button>
+        </div>
+      </div>
+      <div id="calc-unlocked-panel" style="display:none; margin-top:14px; background:#070b12; border:1px solid rgba(16,185,129,0.45); border-radius:12px; padding:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+          <strong id="unlocked-title" style="color:#6ee7b7; font-size:0.95rem;">Plan Unlocked</strong>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-primary" id="btn-dl-csv" onclick="downloadUnlockedCsv()" style="display:none;">Download CSV Dossier</button>
+            <button class="btn" onclick="downloadUnlockedJson()">Download Full JSON</button>
+          </div>
+        </div>
+        <p id="unlocked-meta" style="margin:0 0 10px; font-size:0.84rem; color:var(--muted);"></p>
+        <pre id="unlocked-json" style="max-height:260px;"></pre>
       </div>
     </section>
 
@@ -647,6 +661,9 @@
       }
     }
 
+    window.__activeTaxRailPlan = null;
+    window.__unlockedTaxRailPlan = null;
+
     function switchCalcTab(tab) {
       ["wallet", "br35k", "borrow"].forEach((id) => {
         document.getElementById(`tab-${id}`).style.display = id === tab ? "block" : "none";
@@ -656,7 +673,7 @@
       });
     }
 
-    function setCalcResult(labels, vals, summary, unlockCmd) {
+    function setCalcResult(labels, vals, summary, unlockCmd, planMeta) {
       document.getElementById("calc-metrics").style.display = "grid";
       for (let i = 0; i < 4; i++) {
         document.getElementById(`cm-l${i + 1}`).textContent = labels[i];
@@ -664,11 +681,246 @@
       }
       document.getElementById("calc-summary").textContent = summary;
       const bar = document.getElementById("calc-unlock-bar");
+      const walletBtn = document.getElementById("calc-wallet-unlock-btn");
+      document.getElementById("calc-unlocked-panel").style.display = "none";
+      window.__activeTaxRailPlan = planMeta && planMeta.planId ? planMeta : null;
+
+      if (window.__activeTaxRailPlan) {
+        const fee = Number(window.__activeTaxRailPlan.upfrontX402Usd ?? 0);
+        walletBtn.textContent =
+          fee <= 0
+            ? "Unlock Free Dossier ($0.00)"
+            : `Connect Wallet & Unlock ($${fee.toFixed(2)} USDC · 0 Gas)`;
+        walletBtn.style.display = "inline-block";
+      } else {
+        walletBtn.style.display = "none";
+      }
+
       if (unlockCmd) {
         document.getElementById("calc-unlock-cmd").textContent = unlockCmd;
         bar.style.display = "flex";
       } else {
         bar.style.display = "none";
+      }
+    }
+
+    function renderUnlockedDossier(plan, txHash) {
+      window.__unlockedTaxRailPlan = plan;
+      const panel = document.getElementById("calc-unlocked-panel");
+      const title = document.getElementById("unlocked-title");
+      const meta = document.getElementById("unlocked-meta");
+      const csvBtn = document.getElementById("btn-dl-csv");
+      const jsonPre = document.getElementById("unlocked-json");
+
+      title.textContent = `Unlocked: ${plan.planId} (${plan.accountingDossier?.format || plan.planType})`;
+      meta.textContent = `Verified Savings: $${Number(plan.taxSavedUsd ?? 0).toFixed(2)} · Baseline $${Number(plan.baselineTaxUsd ?? 0).toFixed(2)} -> Optimized $${Number(plan.optimizedTaxUsd ?? 0).toFixed(2)}`;
+      if (txHash && /^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+        meta.appendChild(document.createTextNode(" · "));
+        const proof = document.createElement("a");
+        proof.href = `https://basescan.org/tx/${txHash}`;
+        proof.target = "_blank";
+        proof.rel = "noopener noreferrer";
+        proof.textContent = "BaseScan Settlement ↗";
+        meta.appendChild(proof);
+      }
+      csvBtn.style.display = plan.accountingDossier?.csvExport ? "inline-block" : "none";
+      jsonPre.textContent = JSON.stringify(plan, null, 2);
+      panel.style.display = "block";
+    }
+
+    function downloadTextFile(filename, content, mime) {
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function downloadUnlockedCsv() {
+      const plan = window.__unlockedTaxRailPlan;
+      if (!plan?.accountingDossier?.csvExport) return;
+      const fmt = String(plan.accountingDossier.format || "dossier").toLowerCase();
+      downloadTextFile(`taxrail-${fmt}-${plan.planId}.csv`, plan.accountingDossier.csvExport, "text/csv;charset=utf-8");
+    }
+
+    function downloadUnlockedJson() {
+      const plan = window.__unlockedTaxRailPlan;
+      if (!plan) return;
+      downloadTextFile(`taxrail-plan-${plan.planId}.json`, JSON.stringify(plan, null, 2), "application/json");
+    }
+
+    function toBase64Json(obj) {
+      const bytes = new TextEncoder().encode(JSON.stringify(obj));
+      let bin = "";
+      bytes.forEach((b) => { bin += String.fromCharCode(b); });
+      return btoa(bin);
+    }
+
+    function fromBase64Json(b64) {
+      try {
+        const bin = atob(b64.trim());
+        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+        return JSON.parse(new TextDecoder().decode(bytes));
+      } catch {
+        return null;
+      }
+    }
+
+    async function ensureBaseNetwork(eth) {
+      try {
+        await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x2105" }] });
+      } catch (err) {
+        if (err && err.code === 4902) {
+          await eth.request({
+            method: "wallet_addEthereumChain",
+            params: [{
+              chainId: "0x2105",
+              chainName: "Base",
+              nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+              rpcUrls: ["https://mainnet.base.org"],
+              blockExplorerUrls: ["https://basescan.org"]
+            }]
+          });
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    async function unlockActivePlanWithWallet() {
+      const meta = window.__activeTaxRailPlan;
+      const summary = document.getElementById("calc-summary");
+      const btn = document.getElementById("calc-wallet-unlock-btn");
+      if (!meta || !meta.planId) return;
+
+      const prevLabel = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Checking unlock...";
+
+      try {
+        const probeRes = await fetch(`${API_BASE}/api/v1/unlock-plan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planId: meta.planId }),
+        });
+
+        if (probeRes.ok) {
+          const freePlan = await probeRes.json();
+          renderUnlockedDossier(freePlan, null);
+          summary.textContent = "Plan unlocked for $0.00! Download your CSV dossier below.";
+          return;
+        }
+
+        if (probeRes.status !== 402) {
+          const errData = await probeRes.json().catch(() => ({}));
+          summary.textContent = `Unlock probe error (${probeRes.status}): ${errData.error || "Please re-run simulation."}`;
+          return;
+        }
+
+        const prBody = await probeRes.json();
+        const accepted = prBody.accepts && prBody.accepts[0];
+        if (!accepted) {
+          summary.textContent = "Missing x402 payment requirements from server.";
+          return;
+        }
+
+        const eth = window.ethereum;
+        if (!eth || typeof eth.request !== "function") {
+          summary.textContent = "No Web3 wallet extension detected in this browser. Install MetaMask, Coinbase Wallet, or Rabby (with Base USDC), or pay programmatically via the x402 command below.";
+          return;
+        }
+
+        btn.textContent = "Waiting for wallet signature...";
+        const accounts = await eth.request({ method: "eth_requestAccounts" });
+        const fromAddress = accounts && accounts[0];
+        if (!fromAddress) {
+          summary.textContent = "Wallet connection cancelled.";
+          return;
+        }
+
+        await ensureBaseNetwork(eth);
+
+        const rand = new Uint8Array(32);
+        crypto.getRandomValues(rand);
+        const nonce = "0x" + Array.from(rand, (b) => b.toString(16).padStart(2, "0")).join("");
+        const nowSec = Math.floor(Date.now() / 1000);
+        const authorization = {
+          from: fromAddress,
+          to: accepted.payTo,
+          value: String(accepted.amount),
+          validAfter: String(nowSec - 600),
+          validBefore: String(nowSec + Number(accepted.maxTimeoutSeconds || 300)),
+          nonce,
+        };
+
+        const typedData = {
+          types: {
+            EIP712Domain: [
+              { name: "name", type: "string" },
+              { name: "version", type: "string" },
+              { name: "chainId", type: "uint256" },
+              { name: "verifyingContract", type: "address" },
+            ],
+            TransferWithAuthorization: [
+              { name: "from", type: "address" },
+              { name: "to", type: "address" },
+              { name: "value", type: "uint256" },
+              { name: "validAfter", type: "uint256" },
+              { name: "validBefore", type: "uint256" },
+              { name: "nonce", type: "bytes32" },
+            ],
+          },
+          domain: {
+            name: (accepted.extra && accepted.extra.name) || "USD Coin",
+            version: (accepted.extra && accepted.extra.version) || "2",
+            chainId: 8453,
+            verifyingContract: accepted.asset,
+          },
+          primaryType: "TransferWithAuthorization",
+          message: authorization,
+        };
+
+        const signature = await eth.request({
+          method: "eth_signTypedData_v4",
+          params: [fromAddress, JSON.stringify(typedData)],
+        });
+
+        const paymentPayload = {
+          x402Version: 2,
+          resource: prBody.resource,
+          accepted,
+          payload: { signature, authorization },
+        };
+
+        btn.textContent = "Settling USDC (0 Gas)...";
+        const paidRes = await fetch(`${API_BASE}/api/v1/unlock-plan`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "PAYMENT-SIGNATURE": toBase64Json(paymentPayload),
+          },
+          body: JSON.stringify({ planId: meta.planId }),
+        });
+
+        const paidJson = await paidRes.json();
+        if (!paidRes.ok) {
+          summary.textContent = `Settlement error (${paidRes.status}): ${paidJson.error || "Ensure your wallet holds enough Base USDC."}`;
+          return;
+        }
+
+        const prResp = fromBase64Json(paidRes.headers.get("PAYMENT-RESPONSE") || "");
+        const txHash = prResp && prResp.transaction ? String(prResp.transaction) : null;
+        renderUnlockedDossier(paidJson, txHash);
+        summary.textContent = "USDC settled with 0 gas! Your SpecID execution plan & accounting CSV are unlocked below.";
+      } catch (err) {
+        summary.textContent = `Wallet unlock aborted: ${err && err.message ? err.message : String(err)}`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prevLabel;
       }
     }
 
@@ -712,7 +964,14 @@
             `$${Number(data.pricing?.upfrontX402Usd ?? 0).toFixed(2)}`,
           ],
           data.agentGuidance || "Simulation complete.",
-          unlockCmd
+          unlockCmd,
+          data.planId
+            ? {
+                planId: data.planId,
+                upfrontX402Usd: Number(data.pricing?.upfrontX402Usd ?? 0),
+                taxSavedUsd: Number(data.taxSavedUsd ?? 0),
+              }
+            : null
         );
       } catch (err) {
         summary.textContent = `Request failed: ${err}`;
@@ -742,7 +1001,8 @@
         ["Projected Month (R$)", "Tax Rate Applied", "Max Safe Sale (USD)", "x402 Check Cost"],
         [`R$ ${projectedBrl.toFixed(0)}`, taxRate, `$${maxSafeUsd.toFixed(2)}`, "$0.005"],
         statusText,
-        cmd
+        cmd,
+        null
       );
     }
 
@@ -785,7 +1045,14 @@
             `${Number(data.projectedLtvPct ?? 0).toFixed(1)}%`,
           ],
           `Recommendation: ${data.recommendation} — ${data.agentGuidance || ""}`,
-          cmd
+          cmd,
+          data.planId
+            ? {
+                planId: data.planId,
+                upfrontX402Usd: Number(data.pricing?.upfrontX402Usd ?? 0),
+                taxSavedUsd: Number(data.taxSavedUsd ?? 0),
+              }
+            : null
         );
       } catch (err) {
         summary.textContent = `Request failed: ${err}`;
