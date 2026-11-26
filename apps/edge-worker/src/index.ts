@@ -8,6 +8,7 @@ import {
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { z } from "zod";
+import { createCdpFacilitatorAuthHeaders } from "./cdp-auth.js";
 import {
   buildAgentCard,
   buildLlmsTxt,
@@ -15,7 +16,7 @@ import {
   buildSkillMd,
   buildWellKnownX402,
 } from "./discovery.js";
-import { type Env, resolvePublicBaseUrl } from "./env.js";
+import { COINBASE_CDP_FACILITATOR_URL, type Env, resolvePublicBaseUrl } from "./env.js";
 import { handleMcpHttpRequest } from "./mcp.js";
 import { fetchSpotPriceUsd, fetchWalletLotsFromAlchemy } from "./onchain.js";
 import { createPlanStore } from "./plan-store.js";
@@ -108,7 +109,51 @@ export function createApp(): Hono<{ Bindings: Env }> {
     });
   });
 
-  app.get("/health", (c) => {
+  app.get("/health", async (c) => {
+    if (c.req.query("check") === "cdp") {
+      const keyId = c.env.CDP_API_KEY_ID?.trim();
+      const keySecret = c.env.CDP_API_KEY_SECRET?.trim();
+      const cdpConfigured = Boolean(keyId && keySecret);
+      if (!cdpConfigured || !keyId || !keySecret) {
+        return c.json({
+          status: "ok",
+          cdpConfigured: false,
+          jwtMintOk: false,
+          supportedHttpStatus: null,
+          errorMessage: "CDP_API_KEY_ID or CDP_API_KEY_SECRET not set",
+        });
+      }
+
+      let jwtMintOk = false;
+      try {
+        const headers = await createCdpFacilitatorAuthHeaders(keyId, keySecret)();
+        jwtMintOk = Boolean(headers.supported?.Authorization);
+        const res = await fetch(`${COINBASE_CDP_FACILITATOR_URL}/supported`, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            ...headers.supported,
+          },
+        });
+        const errorMessage = res.ok ? null : (await res.text()).slice(0, 300);
+        return c.json({
+          status: "ok",
+          cdpConfigured: true,
+          jwtMintOk,
+          supportedHttpStatus: res.status,
+          errorMessage,
+        });
+      } catch (err) {
+        return c.json({
+          status: "ok",
+          cdpConfigured: true,
+          jwtMintOk,
+          supportedHttpStatus: null,
+          errorMessage: err instanceof Error ? err.message : "Unknown CDP check error",
+        });
+      }
+    }
+
     return c.json({
       status: "ok",
       service: "taxrail-edge",

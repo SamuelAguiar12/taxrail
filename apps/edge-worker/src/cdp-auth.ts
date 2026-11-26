@@ -20,17 +20,95 @@ function jsonToBase64Url(obj: unknown): string {
   return bytesToBase64Url(new TextEncoder().encode(JSON.stringify(obj)));
 }
 
-function base64ToBytes(b64: string): Uint8Array {
-  const clean = b64
+function stripQuotes(s: string): string {
+  const trimmed = s.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function normalizeApiKeyId(raw: string): string {
+  const clean = stripQuotes(raw);
+  if (clean.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(clean) as { id?: string; name?: string };
+      if (parsed.id) return parsed.id.trim();
+      if (parsed.name) return parsed.name.trim();
+    } catch {
+      // Fall through to raw string
+    }
+  }
+  return clean;
+}
+
+function base64ToBytes(rawSecret: string): Uint8Array {
+  let clean = stripQuotes(rawSecret).replace(/\\n/g, "\n");
+  if (clean.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(clean) as { privateKey?: string; secret?: string };
+      clean = (parsed.privateKey || parsed.secret || clean).replace(/\\n/g, "\n");
+    } catch {
+      // Fall through
+    }
+  }
+
+  clean = clean
     .replace(/-----BEGIN [^-]+-----/g, "")
     .replace(/-----END [^-]+-----/g, "")
-    .replace(/\s+/g, "");
+    .replace(/\s+/g, "")
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
+
+  const rem = clean.length % 4;
+  if (rem === 2) clean += "==";
+  else if (rem === 3) clean += "=";
+
   const bin = atob(clean);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) {
     out[i] = bin.charCodeAt(i);
   }
   return out;
+}
+
+async function signEd25519Pkcs8(
+  pkcs8Buffer: ArrayBuffer,
+  messageBytes: Uint8Array
+): Promise<Uint8Array> {
+  try {
+    const key = await crypto.subtle.importKey(
+      "pkcs8",
+      pkcs8Buffer,
+      { name: "Ed25519" },
+      false,
+      ["sign"]
+    );
+    const sig = await crypto.subtle.sign({ name: "Ed25519" }, key, messageBytes);
+    return new Uint8Array(sig);
+  } catch {
+    // Fallback for Cloudflare Workers runtimes using legacy NODE-ED25519 identifier
+    const legacyAlg = {
+      name: "NODE-ED25519",
+      namedCurve: "NODE-ED25519",
+    } as unknown as Parameters<typeof crypto.subtle.importKey>[2];
+    const key = await crypto.subtle.importKey(
+      "pkcs8",
+      pkcs8Buffer,
+      legacyAlg,
+      false,
+      ["sign"]
+    );
+    const sig = await crypto.subtle.sign(
+      { name: "NODE-ED25519" } as unknown as Parameters<typeof crypto.subtle.sign>[0],
+      key,
+      messageBytes
+    );
+    return new Uint8Array(sig);
+  }
 }
 
 function toPkcs8DerBytes(secret: string): Uint8Array {
@@ -79,15 +157,16 @@ export async function createCdpJwt(params: {
     expiresInSeconds = 120,
   } = params;
 
+  const keyId = normalizeApiKeyId(apiKeyId);
   const now = Math.floor(Date.now() / 1000);
   const header = {
     alg: "EdDSA",
     typ: "JWT",
-    kid: apiKeyId.trim(),
+    kid: keyId,
     nonce: randomHex16(),
   };
   const payload = {
-    sub: apiKeyId.trim(),
+    sub: keyId,
     iss: "cdp",
     nbf: now,
     exp: now + expiresInSeconds,
@@ -95,27 +174,18 @@ export async function createCdpJwt(params: {
   };
 
   const signingInput = `${jsonToBase64Url(header)}.${jsonToBase64Url(payload)}`;
-  const pkcs8Bytes = toPkcs8DerBytes(apiKeySecret.trim());
+  const pkcs8Bytes = toPkcs8DerBytes(apiKeySecret);
   const pkcs8Buffer = pkcs8Bytes.buffer.slice(
     pkcs8Bytes.byteOffset,
     pkcs8Bytes.byteOffset + pkcs8Bytes.byteLength
   ) as ArrayBuffer;
 
-  const privateKey = await crypto.subtle.importKey(
-    "pkcs8",
+  const sigBytes = await signEd25519Pkcs8(
     pkcs8Buffer,
-    { name: "Ed25519" },
-    false,
-    ["sign"]
-  );
-
-  const sigBuffer = await crypto.subtle.sign(
-    { name: "Ed25519" },
-    privateKey,
     new TextEncoder().encode(signingInput)
   );
 
-  return `${signingInput}.${bytesToBase64Url(new Uint8Array(sigBuffer))}`;
+  return `${signingInput}.${bytesToBase64Url(sigBytes)}`;
 }
 
 /**
