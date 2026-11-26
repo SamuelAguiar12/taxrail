@@ -5,7 +5,7 @@
 
 **The Autonomous Tax-Optimization Rail for AI Agents — US & Brazil**
 
-TaxRail is a non-custodial, deterministic pre-execution tax & treasury optimization layer built for autonomous AI agents, wallets, and fintech workflows. Before an agent executes a swap, borrows liquidity, or pays a corporate vendor, TaxRail simulates the tax impact across US and Brazilian regimes, builds non-custodial execution payloads (`0x v2`, `CoW Swap`, `Jupiter`, `Aave v3`), and settles pay-per-savings fees natively via **MCP × x402** on Base (`eip155:8453` USDC).
+TaxRail is a non-custodial, deterministic pre-execution tax & treasury optimization layer built for autonomous AI agents, wallets, and fintech workflows. Before an agent executes a swap, borrows liquidity, or pays a corporate vendor, TaxRail simulates the tax impact across US and Brazilian regimes, builds non-custodial execution payloads (`0x v2`, `CoW Swap`, `Jupiter`, `Aave v3`), and settles pay-per-savings fees natively via **MCP × x402** on Base (`eip155:8453` USDC) through **Coinbase CDP** (primary) and **PayAI** (automatic fallback).
 
 ---
 
@@ -98,12 +98,13 @@ Add to Claude Desktop, Cursor, or any MCP-compatible agent runtime:
 - **Remote MCP:** `POST https://api.taxrail.online/mcp`
 - **Portable Agent Skill (`SKILL.md`):** `https://api.taxrail.online/SKILL.md` (committed in [`skills/taxrail-crypto-tax/SKILL.md`](skills/taxrail-crypto-tax/SKILL.md) for OpenClaw/ClawHub, Claude Code, Codex, Cursor)
 - **REST Endpoints:**
-  - `GET /api/v1/x402/tlh-scan?walletAddress=0x...&chain=base` (**$0.01 USDC** 1-parameter wallet TLH & tax-risk scanner via x402)
+  - `GET /api/v1/x402/tlh-scan?walletAddress=0x...&chain=base&asset=ALL` (**$0.01 USDC** 1-parameter multi-asset wallet TLH & tax-risk scanner covering up to 25 volatile tokens via x402, with per-token `planId`s)
   - `POST /api/v1/x402/optimize` (**$0.10 USDC** 1-step full optimization + calldata + dossier via x402)
   - `POST /api/v1/check-tax-impact` (Free preview -> dynamic `unlock-plan`)
   - `POST /api/v1/borrow-vs-sell` (Free preview -> dynamic `unlock-plan`)
   - `POST /api/v1/classify-expense` (Free preview -> dynamic `unlock-plan`)
   - `POST /api/v1/unlock-plan` (Dynamic x402 `USDC` on `eip155:8453`, 10% of verified tax savings)
+  - `POST /api/v1/feedback` & `GET /api/v1/reputation` (Free agent feedback loop & BaseScan-verified public reputation)
 
 ### 3. Coinbase AgentKit & SDK (`npm install taxrail-agent-tools`)
 

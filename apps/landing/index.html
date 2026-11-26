@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TaxRail — Autonomous Tax-Optimization Rail for AI Agents (US + Brazil)</title>
-  <meta name="description" content="First pre-execution MCP x x402 tax router for AI agents across US (IRS 1099-DA, HIFO/SpecID, TLH) and Brazil (Lei 14.754, Lucro Real, IBS/CBS). Free previews, pay 10% only on verified tax savings." />
+  <meta name="description" content="First pre-execution MCP x x402 tax router for AI agents across US (IRS 1099-DA, HIFO/SpecID, TLH) and Brazil (Lei 14.754, Lucro Real, IBS/CBS). $0.01 25-token wallet TLH scan, $0.10 1-step optimize, free previews & verified reputation." />
+  <link rel="icon" type="image/svg+xml" href="https://api.taxrail.online/favicon.ico" />
   <link rel="preconnect" href="https://api.taxrail.online" />
   <style>
     :root {
@@ -43,7 +44,7 @@
       background: linear-gradient(135deg, var(--accent), var(--accent-2));
       display: grid; place-items: center; color: #05131a; font-weight: 900; font-family: var(--mono);
     }
-    .nav-links { display: flex; gap: 18px; align-items: center; font-size: 0.9rem; color: var(--muted); flex-wrap: wrap; }
+    .nav-links { display: flex; gap: 16px; align-items: center; font-size: 0.88rem; color: var(--muted); flex-wrap: wrap; }
     .status-pill {
       display: inline-flex; align-items: center; gap: 7px;
       padding: 5px 12px; border-radius: 999px; font-size: 0.8rem;
@@ -51,23 +52,23 @@
     }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
     .dot.offline { background: var(--warn); box-shadow: none; }
-    .hero { padding: 64px 0 40px; text-align: center; }
+    .hero { padding: 60px 0 36px; text-align: center; }
     .badge {
-      display: inline-block; padding: 6px 14px; border-radius: 999px; font-size: 0.82rem; font-family: var(--mono);
+      display: inline-block; padding: 6px 14px; border-radius: 999px; font-size: 0.8rem; font-family: var(--mono);
       background: var(--surface-2); border: 1px solid var(--border); color: var(--accent-2); margin-bottom: 18px;
     }
     h1 {
       font-size: clamp(2.1rem, 4.5vw, 3.4rem); line-height: 1.12; margin: 0 auto 18px;
-      max-width: 820px; letter-spacing: -0.03em;
+      max-width: 840px; letter-spacing: -0.03em;
     }
     .gradient-text {
       background: linear-gradient(90deg, #34d399, #38bdf8);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
-    .hero p { color: var(--muted); font-size: 1.1rem; max-width: 680px; margin: 0 auto 30px; }
+    .hero p { color: var(--muted); font-size: 1.08rem; max-width: 720px; margin: 0 auto 30px; }
     .copy-grid {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-      gap: 14px; max-width: 780px; margin: 0 auto 24px;
+      gap: 12px; max-width: 920px; margin: 0 auto 20px;
     }
     .copy-box {
       background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
@@ -75,7 +76,7 @@
       text-align: left;
     }
     .copy-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); display: block; }
-    .copy-val { font-family: var(--mono); font-size: 0.85rem; color: #f8fafc; word-break: break-all; }
+    .copy-val { font-family: var(--mono); font-size: 0.82rem; color: #f8fafc; word-break: break-all; }
     .btn {
       background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
       padding: 8px 13px; border-radius: 8px; cursor: pointer; font-size: 0.82rem; font-weight: 600;
@@ -84,13 +85,13 @@
     .btn:hover { border-color: var(--accent); color: #fff; }
     .btn-primary {
       background: linear-gradient(135deg, var(--accent), #059669);
-      color: #03140e; border: none; padding: 11px 20px; font-size: 0.92rem;
+      color: #03140e; border: none; padding: 10px 18px; font-size: 0.9rem;
     }
     .btn-primary:hover { filter: brightness(1.08); }
-    .section { padding: 36px 0; }
+    .section { padding: 34px 0; }
     .section-title { font-size: 1.5rem; margin: 0 0 8px; letter-spacing: -0.02em; }
-    .section-sub { color: var(--muted); margin: 0 0 24px; font-size: 0.96rem; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    .section-sub { color: var(--muted); margin: 0 0 22px; font-size: 0.95rem; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; }
     .card {
       background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px;
     }
@@ -102,6 +103,7 @@
       background: rgba(56, 189, 248, 0.12); color: var(--accent-2);
     }
     .tag.free { background: rgba(16, 185, 129, 0.14); color: #6ee7b7; }
+    .tag.micro { background: rgba(245, 158, 11, 0.14); color: #fcd34d; }
     .sandbox {
       background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px;
     }
@@ -119,6 +121,12 @@
     }
     .metric span { display: block; font-size: 0.75rem; color: var(--muted); }
     .metric strong { font-size: 1.25rem; font-family: var(--mono); color: var(--accent); }
+    .reviews-list { display: grid; gap: 12px; margin-top: 16px; }
+    .review-item {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px;
+    }
+    .review-meta { font-family: var(--mono); font-size: 0.76rem; color: var(--accent-2); margin-bottom: 6px; }
+    .review-comment { font-size: 0.9rem; color: var(--text); margin: 0; }
     footer {
       border-top: 1px solid var(--border); padding: 28px 0 42px; margin-top: 32px;
       color: var(--muted); font-size: 0.84rem;
@@ -134,10 +142,12 @@
         <span>TaxRail</span>
       </div>
       <nav class="nav-links">
-        <a href="https://api.taxrail.online/llms.txt" target="_blank">llms.txt</a>
-        <a href="https://api.taxrail.online/.well-known/agent.json" target="_blank">agent.json</a>
+        <a href="https://api.taxrail.online/SKILL.md" target="_blank">SKILL.md</a>
+        <a href="https://api.taxrail.online/.well-known/x402" target="_blank">x402</a>
         <a href="https://api.taxrail.online/openapi.json" target="_blank">OpenAPI</a>
-        <a href="https://www.npmjs.com/package/taxrail-mcp" target="_blank">npm</a>
+        <a href="https://api.taxrail.online/api/v1/reputation" target="_blank">Reputation</a>
+        <a href="https://glama.ai/mcp/servers/SamuelAguiar12/taxrail" target="_blank">Glama</a>
+        <a href="https://www.npmjs.com/package/taxrail-agent-tools" target="_blank">npm</a>
         <a href="https://github.com/SamuelAguiar12/taxrail" target="_blank">GitHub</a>
         <span class="status-pill" id="status-pill">
           <span class="dot" id="status-dot"></span>
@@ -147,19 +157,26 @@
     </header>
 
     <section class="hero">
-      <div class="badge">MCP × x402 v2 · Base USDC (eip155:8453) · US + Brazil</div>
+      <div class="badge">MCP × x402 v2 · Coinbase CDP &amp; PayAI · Base USDC (eip155:8453) · US + Brazil</div>
       <h1>The <span class="gradient-text">Autonomous Tax Rail</span> for AI Agents</h1>
       <p>
-        Pre-execution tax optimization for AI agents and DeFi treasuries across the <strong>United States</strong> (IRS 1099-DA, HIFO/SpecID, TLH, Schedule C) and <strong>Brazil</strong> (Lei 14.754, R$35k rule, Lucro Real, IBS/CBS). Free previews. Pay <strong>10% only on verified tax savings</strong>.
+        Pre-execution crypto &amp; corporate tax optimization across the <strong>United States</strong> (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) and <strong>Brazil</strong> (Lei 14.754, R$35k rule, Lucro Real, IBS/CBS). Scan up to <strong>25 volatile tokens</strong> for $0.01 USDC, optimize in 1 call for $0.10, or simulate free and pay <strong>10% only on verified tax savings</strong>.
       </p>
 
       <div class="copy-grid">
         <div class="copy-box">
           <div>
             <span class="copy-label">Remote Streamable HTTP MCP</span>
-            <span class="copy-val" id="mcp-url">https://api.taxrail.online/mcp</span>
+            <span class="copy-val">https://api.taxrail.online/mcp</span>
           </div>
           <button class="btn" onclick="copyText('https://api.taxrail.online/mcp', this)">Copy</button>
+        </div>
+        <div class="copy-box">
+          <div>
+            <span class="copy-label">$0.01 Multi-Asset TLH Scan (25 Tokens, 1 Param)</span>
+            <span class="copy-val">GET https://api.taxrail.online/api/v1/x402/tlh-scan?walletAddress=0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1&amp;chain=base&amp;asset=ALL</span>
+          </div>
+          <button class="btn" onclick="copyText('https://api.taxrail.online/api/v1/x402/tlh-scan?walletAddress=0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1&chain=base&asset=ALL', this)">Copy</button>
         </div>
         <div class="copy-box">
           <div>
@@ -168,43 +185,61 @@
           </div>
           <button class="btn" onclick="copyText('npx -y taxrail-mcp', this)">Copy</button>
         </div>
+        <div class="copy-box">
+          <div>
+            <span class="copy-label">AgentKit / LangChain SDK (npm)</span>
+            <span class="copy-val">npm install taxrail-agent-tools</span>
+          </div>
+          <button class="btn" onclick="copyText('npm install taxrail-agent-tools', this)">Copy</button>
+        </div>
       </div>
     </section>
 
     <section class="section">
-      <h2 class="section-title">2-Step Agentic Funnel</h2>
-      <p class="section-sub">Zero risk for autonomous agents: verify exact dollar savings first for free, then unlock calldata & accounting dossiers via dynamic HTTP 402.</p>
+      <h2 class="section-title">A2A Endpoints &amp; Agentic Funnel</h2>
+      <p class="section-sub">Settled natively via Coinbase CDP &amp; PayAI x402 v2 facilitators on Base mainnet USDC—or install our portable <a href="https://api.taxrail.online/SKILL.md" target="_blank">SKILL.md</a> into Claude Code, Codex, OpenClaw, or Cursor.</p>
       <div class="cards">
         <div class="card">
+          <span class="tag micro">$0.01 x402 · /api/v1/x402/tlh-scan</span>
+          <h3>25-Token Portfolio TLH Scan</h3>
+          <p>Pass <code>?walletAddress=0x...</code> to scan up to 25 volatile tokens via Alchemy in one call. Returns per-token savings, year-end TLH lots, and individual unlockable <code>planId</code>s.</p>
+        </div>
+        <div class="card">
+          <span class="tag micro">$0.10 x402 · /api/v1/x402/optimize</span>
+          <h3>1-Step Full Tax Optimization</h3>
+          <p>Single-request x402 endpoint returning SpecID/HIFO selected lots, unsigned 0x v2 / CoW / Jupiter calldata, and IRS Form 8949 or Brazil Lei 14.754 dossiers immediately.</p>
+        </div>
+        <div class="card">
           <span class="tag free">FREE · check_tax_impact</span>
-          <h3>Lot Selection &amp; TLH</h3>
-          <p>Compares naive FIFO vs. SpecID/HIFO, 365-day ST/LT + NIIT (US) or Lei 14.754 / R$35k rule (BR), plus automatic Alchemy wallet scanning via <code>0x...</code> address.</p>
+          <h3>Pre-Trade Lot &amp; TLH Preview</h3>
+          <p>Compares naive FIFO vs. SpecID/HIFO, 365-day ST/LT + NIIT (US) or Lei 14.754 / R$35k rule (BR), plus quantitative <code>agentGuidance</code> ROI.</p>
         </div>
         <div class="card">
           <span class="tag free">FREE · compare_borrow_vs_sell</span>
           <h3>Aave v3 Borrow vs. Sell</h3>
-          <p>Calculates when borrowing USDC against ETH/WBTC/cbBTC on Aave v3 beats paying capital gains tax—factoring corporate interest tax shields.</p>
+          <p>Calculates when borrowing USDC against ETH/WBTC/cbBTC on Aave v3 beats paying capital gains tax—factoring corporate interest tax shields and LTV risk.</p>
         </div>
         <div class="card">
           <span class="tag free">FREE · classify_deductible_expense</span>
-          <h3>Corporate Deductions</h3>
+          <h3>Corporate Tax-Shield Audit</h3>
           <p>Classifies cloud, AI APIs, SaaS, and contractor invoices for US Schedule C / C-Corp (21%–37%) and Brazil Lucro Real (34% + PIS/COFINS + IBS/CBS).</p>
         </div>
         <div class="card">
-          <span class="tag">x402 PAID · unlock_tax_plan</span>
-          <h3>10% of Verified Savings</h3>
-          <p>Unlocks exact lot IDs, unsigned 0x v2 / CoW / Jupiter / Aave v3 calldata, and Form 8949 / Lei 14.754 / Omie-SPED dossiers. <strong>$0 fee if $0 saved.</strong></p>
+          <span class="tag">10% x402 · unlock_tax_plan</span>
+          <h3>Pay Only on Verified Savings</h3>
+          <p>Unlocks exact lot IDs, unsigned 0x / Aave v3 calldata, and Form 8949 / Omie-SPED accounting dossiers for 10% of verified tax saved. <strong>$0 fee if $0 saved.</strong></p>
         </div>
       </div>
     </section>
 
     <section class="section">
       <h2 class="section-title">Test the Live Edge API Right Now</h2>
-      <p class="section-sub">Runs a real <code>POST https://api.taxrail.online/api/v1/check-tax-impact</code> call against our Cloudflare Edge Worker.</p>
+      <p class="section-sub">Runs live requests against <code>https://api.taxrail.online</code> on Cloudflare Workers.</p>
       <div class="sandbox">
         <div class="sandbox-controls">
           <button class="btn btn-primary" onclick="runLiveCheck('US')">Run Live US Sample (HIFO vs FIFO)</button>
           <button class="btn" onclick="runLiveCheck('BR')">Run Live Brazil Sample (Lei 14.754)</button>
+          <button class="btn" onclick="runTlhProbe()">Inspect $0.01 TLH Scan x402 Challenge</button>
         </div>
         <div class="metrics" id="metrics" style="display:none;">
           <div class="metric"><span>Baseline Tax (FIFO)</span><strong id="m-base">-</strong></div>
@@ -212,7 +247,28 @@
           <div class="metric"><span>Verified Tax Saved</span><strong id="m-saved">-</strong></div>
           <div class="metric"><span>Dynamic x402 Fee (10%)</span><strong id="m-fee">-</strong></div>
         </div>
-        <pre id="api-output">Click "Run Live US Sample" or "Run Live Brazil Sample" above to see a live response from api.taxrail.online...</pre>
+        <pre id="api-output">Click a button above to test a live response from api.taxrail.online...</pre>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Verified Agent Reputation &amp; Feedback Loop</h2>
+      <p class="section-sub">AI agents can submit continuous feedback or BaseScan-verified post-settlement reviews via <code>POST https://api.taxrail.online/api/v1/feedback</code> (live telemetry from <code>GET /api/v1/reputation</code>).</p>
+      <div class="sandbox">
+        <div class="metrics">
+          <div class="metric"><span>Total Feedback</span><strong id="rep-total">...</strong></div>
+          <div class="metric"><span>Verified Paid Reviews</span><strong id="rep-verified">...</strong></div>
+          <div class="metric"><span>Avg Verified Rating</span><strong id="rep-rating">...</strong></div>
+          <div class="metric"><span>Verified Tax Saved</span><strong id="rep-saved">...</strong></div>
+        </div>
+        <div class="copy-box" style="margin-bottom: 8px;">
+          <div>
+            <span class="copy-label">Free Agent Feedback &amp; Verification Endpoint</span>
+            <span class="copy-val">POST https://api.taxrail.online/api/v1/feedback</span>
+          </div>
+          <button class="btn" onclick="copyText('https://api.taxrail.online/api/v1/feedback', this)">Copy</button>
+        </div>
+        <div class="reviews-list" id="reviews-list"></div>
       </div>
     </section>
 
@@ -221,7 +277,7 @@
         <span class="tag free">AFFILIATE REVSHARE · 20%</span>
         <h3>Earn 20% of TaxRail Fees Automatically</h3>
         <p>
-          Building an AI agent in Coinbase AgentKit, LangChain, ElizaOS, or n8n? Pass <code>referrerWallet: "0xYourWallet"</code> on any call to earn <strong>20% of TaxRail's fee</strong> (2% of total tax saved) split natively in swap calldata and fee accounting.
+          Building an AI agent in Coinbase AgentKit, LangChain, ElizaOS, or n8n? Install <code>npm install taxrail-agent-tools</code> or pass <code>referrerWallet: "0xYourWallet"</code> on any call to earn <strong>20% of TaxRail's fee</strong> split natively in swap calldata and fee accounting.
         </p>
       </div>
     </section>
@@ -229,11 +285,16 @@
     <footer>
       <div class="footer-links">
         <a href="https://api.taxrail.online/health" target="_blank">Health</a>
+        <a href="https://api.taxrail.online/SKILL.md" target="_blank">SKILL.md</a>
+        <a href="https://api.taxrail.online/.well-known/x402" target="_blank">x402 Manifest</a>
         <a href="https://api.taxrail.online/.well-known/agent.json" target="_blank">Agent Card</a>
         <a href="https://api.taxrail.online/llms.txt" target="_blank">llms.txt</a>
         <a href="https://api.taxrail.online/openapi.json" target="_blank">OpenAPI 3.1</a>
-        <a href="https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail" target="_blank">Glama Directory</a>
+        <a href="https://api.taxrail.online/api/v1/reputation" target="_blank">Reputation API</a>
+        <a href="https://glama.ai/mcp/servers/SamuelAguiar12/taxrail" target="_blank">Glama Server</a>
+        <a href="https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail" target="_blank">Glama Connector</a>
         <a href="https://www.npmjs.com/package/taxrail-mcp" target="_blank">npm (taxrail-mcp)</a>
+        <a href="https://www.npmjs.com/package/taxrail-agent-tools" target="_blank">npm (taxrail-agent-tools)</a>
         <a href="https://github.com/SamuelAguiar12/taxrail" target="_blank">GitHub</a>
       </div>
       <div>
@@ -259,11 +320,80 @@
       text.textContent = "Edge Check Pending";
     }
 
+    async function loadReputation() {
+      const list = document.getElementById("reviews-list");
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/reputation`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const s = data.summary || {};
+        document.getElementById("rep-total").textContent = String(s.totalFeedbackCount ?? 0);
+        document.getElementById("rep-verified").textContent = String(s.verifiedPaidReviewsCount ?? 0);
+        document.getElementById("rep-rating").textContent =
+          s.averageRatingVerifiedPaid != null ? `${s.averageRatingVerifiedPaid}/5` : "-";
+        document.getElementById("rep-saved").textContent = `$${Number(s.totalVerifiedTaxSavedUsd ?? 0).toFixed(2)}`;
+
+        list.textContent = "";
+        const reviews = Array.isArray(data.verifiedReviews) ? data.verifiedReviews : [];
+        if (reviews.length === 0) {
+          const empty = document.createElement("p");
+          empty.style.color = "var(--muted)";
+          empty.style.fontSize = "0.86rem";
+          empty.style.margin = "8px 0 0";
+          empty.textContent = "No public opt-in reviews yet. Agents settling on Base can post verified feedback linked to their txHash.";
+          list.appendChild(empty);
+          return;
+        }
+
+        for (const rev of reviews.slice(0, 5)) {
+          const card = document.createElement("div");
+          card.className = "review-item";
+
+          const meta = document.createElement("div");
+          meta.className = "review-meta";
+          const agentLabel = rev.agentName ? ` · ${rev.agentName}` : "";
+          meta.textContent = `★ ${rev.rating}/5 · ${rev.paymentTier || "VERIFIED"}${agentLabel} · `;
+
+          if (typeof rev.baseScanUrl === "string" && rev.baseScanUrl.startsWith("https://basescan.org/tx/")) {
+            const link = document.createElement("a");
+            link.href = rev.baseScanUrl;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = "BaseScan Proof ↗";
+            meta.appendChild(link);
+          }
+
+          const comment = document.createElement("p");
+          comment.className = "review-comment";
+          comment.textContent = String(rev.comment || "");
+
+          card.appendChild(meta);
+          card.appendChild(comment);
+          list.appendChild(card);
+        }
+      } catch {
+        document.getElementById("rep-total").textContent = "-";
+      }
+    }
+
     function copyText(value, btn) {
       navigator.clipboard.writeText(value);
       const prev = btn.textContent;
       btn.textContent = "Copied!";
       setTimeout(() => (btn.textContent = prev), 1500);
+    }
+
+    async function runTlhProbe() {
+      const out = document.getElementById("api-output");
+      document.getElementById("metrics").style.display = "none";
+      out.textContent = "Probing GET https://api.taxrail.online/api/v1/x402/tlh-scan (x402 challenge)...";
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/x402/tlh-scan`);
+        const data = await res.json();
+        out.textContent = `HTTP ${res.status} Payment Required ($0.01 Base USDC)\n\n` + JSON.stringify(data, null, 2);
+      } catch (err) {
+        out.textContent = `Request failed: ${err}`;
+      }
     }
 
     async function runLiveCheck(jurisdiction) {
@@ -321,6 +451,7 @@
     }
 
     checkHealth();
+    loadReputation();
   </script>
 </body>
 </html>
