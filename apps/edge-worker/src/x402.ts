@@ -11,6 +11,7 @@ import type {
   PaymentRequirements,
 } from "@x402/core/types";
 import {
+  COINBASE_CDP_FACILITATOR_URL,
   DEFAULT_FACILITATOR_URL,
   DEFAULT_PAY_TO_ADDRESS,
   DEFAULT_X402_ASSET,
@@ -18,6 +19,7 @@ import {
   type Env,
   resolvePublicBaseUrl,
 } from "./env.js";
+import { createCdpFacilitatorAuthHeaders } from "./cdp-auth.js";
 import type { PlanStore, StoredPlanRecord } from "./plan-store.js";
 
 /**
@@ -296,60 +298,133 @@ export async function verifyUnlockPayment(params: {
     };
   }
 
-  const facilitator = new HTTPFacilitatorClient({
-    url: env.FACILITATOR_URL || DEFAULT_FACILITATOR_URL,
+  const outcome = await verifyAndSettleWithFacilitators({
+    paymentPayload,
+    requirements,
+    env,
   });
 
-  try {
-    const verifyResult = await facilitator.verify(paymentPayload, requirements);
-    if (!verifyResult.isValid) {
-      return {
-        status: "invalid_payment",
-        record,
-        reason:
-          verifyResult.invalidMessage ||
-          verifyResult.invalidReason ||
-          "Facilitator rejected payment verification",
-        paymentRequired,
-        paymentRequiredHeader,
-      };
-    }
-
-    const settleResult = await facilitator.settle(paymentPayload, requirements);
-    if (!settleResult.success) {
-      return {
-        status: "settlement_failed",
-        record,
-        reason:
-          settleResult.errorMessage ||
-          settleResult.errorReason ||
-          "Facilitator settlement failed",
-        paymentRequired,
-        paymentRequiredHeader,
-      };
-    }
-
-    const unlocked = (await planStore.markUnlocked(planId, settleResult.transaction)) ?? {
-      ...record,
-      unlocked: true,
-      settlementTx: settleResult.transaction,
-    };
-
+  if (!outcome.ok) {
     return {
-      status: "paid",
-      record: unlocked,
-      settlementTx: settleResult.transaction,
-      paymentResponseHeader: encodePaymentResponseHeader(settleResult),
-    };
-  } catch (err) {
-    return {
-      status: "settlement_failed",
+      status: outcome.kind,
       record,
-      reason: err instanceof Error ? err.message : "x402 facilitator communication error",
+      reason: outcome.reason,
       paymentRequired,
       paymentRequiredHeader,
     };
   }
+
+  const unlocked = (await planStore.markUnlocked(planId, outcome.settleResult.transaction)) ?? {
+    ...record,
+    unlocked: true,
+    settlementTx: outcome.settleResult.transaction,
+  };
+
+  return {
+    status: "paid",
+    record: unlocked,
+    settlementTx: outcome.settleResult.transaction,
+    paymentResponseHeader: encodePaymentResponseHeader(outcome.settleResult),
+  };
+}
+
+function buildFacilitatorClients(env: Env): HTTPFacilitatorClient[] {
+  const clients: HTTPFacilitatorClient[] = [];
+  const cdpKeyId = env.CDP_API_KEY_ID?.trim();
+  const cdpKeySecret = env.CDP_API_KEY_SECRET?.trim();
+
+  if (cdpKeyId && cdpKeySecret) {
+    clients.push(
+      new HTTPFacilitatorClient({
+        url: COINBASE_CDP_FACILITATOR_URL,
+        createAuthHeaders: createCdpFacilitatorAuthHeaders(cdpKeyId, cdpKeySecret),
+      })
+    );
+  }
+
+  const configuredFallback = (env.FACILITATOR_URL || DEFAULT_FACILITATOR_URL).trim();
+  if (configuredFallback && configuredFallback !== COINBASE_CDP_FACILITATOR_URL) {
+    clients.push(new HTTPFacilitatorClient({ url: configuredFallback }));
+  } else if (clients.length === 0) {
+    clients.push(new HTTPFacilitatorClient({ url: DEFAULT_FACILITATOR_URL }));
+  }
+
+  return clients;
+}
+
+function isRetryableFacilitatorFailure(reason?: string): boolean {
+  if (!reason) return false;
+  const lower = reason.toLowerCase();
+  return (
+    lower.includes("unexpected_error") ||
+    lower.includes("unauthorized") ||
+    lower.includes("forbidden") ||
+    lower.includes("401") ||
+    lower.includes("403")
+  );
+}
+
+async function verifyAndSettleWithFacilitators(params: {
+  paymentPayload: PaymentPayload;
+  requirements: PaymentRequirements;
+  env: Env;
+}): Promise<
+  | { ok: true; settleResult: Awaited<ReturnType<HTTPFacilitatorClient["settle"]>> }
+  | { ok: false; kind: "invalid_payment" | "settlement_failed"; reason: string }
+> {
+  const { paymentPayload, requirements, env } = params;
+  const clients = buildFacilitatorClients(env);
+  let lastError: { ok: false; kind: "invalid_payment" | "settlement_failed"; reason: string } = {
+    ok: false,
+    kind: "settlement_failed",
+    reason: "No x402 facilitator configured",
+  };
+
+  for (let i = 0; i < clients.length; i++) {
+    const facilitator = clients[i]!;
+    const hasFallback = i < clients.length - 1;
+
+    try {
+      const verifyResult = await facilitator.verify(paymentPayload, requirements);
+      if (!verifyResult.isValid) {
+        const reason =
+          verifyResult.invalidMessage ||
+          verifyResult.invalidReason ||
+          "Facilitator rejected payment verification";
+        lastError = { ok: false, kind: "invalid_payment", reason };
+        if (hasFallback && isRetryableFacilitatorFailure(reason)) {
+          continue;
+        }
+        return lastError;
+      }
+
+      const settleResult = await facilitator.settle(paymentPayload, requirements);
+      if (!settleResult.success) {
+        const reason =
+          settleResult.errorMessage ||
+          settleResult.errorReason ||
+          "Facilitator settlement failed";
+        lastError = { ok: false, kind: "settlement_failed", reason };
+        if (hasFallback) {
+          continue;
+        }
+        return lastError;
+      }
+
+      return { ok: true, settleResult };
+    } catch (err) {
+      lastError = {
+        ok: false,
+        kind: "settlement_failed",
+        reason: err instanceof Error ? err.message : "x402 facilitator communication error",
+      };
+      if (hasFallback) {
+        continue;
+      }
+    }
+  }
+
+  return lastError;
 }
 
 export type QuickOptimizePaymentResult =
@@ -641,50 +716,26 @@ async function verifyFlatX402Payment(params: {
     };
   }
 
-  const facilitator = new HTTPFacilitatorClient({
-    url: env.FACILITATOR_URL || DEFAULT_FACILITATOR_URL,
+  const outcome = await verifyAndSettleWithFacilitators({
+    paymentPayload,
+    requirements,
+    env,
   });
 
-  try {
-    const verifyResult = await facilitator.verify(paymentPayload, requirements);
-    if (!verifyResult.isValid) {
-      return {
-        status: "invalid_payment",
-        reason:
-          verifyResult.invalidMessage ||
-          verifyResult.invalidReason ||
-          "Facilitator rejected payment verification",
-        paymentRequired,
-        paymentRequiredHeader,
-      };
-    }
-
-    const settleResult = await facilitator.settle(paymentPayload, requirements);
-    if (!settleResult.success) {
-      return {
-        status: "settlement_failed",
-        reason:
-          settleResult.errorMessage ||
-          settleResult.errorReason ||
-          "Facilitator settlement failed",
-        paymentRequired,
-        paymentRequiredHeader,
-      };
-    }
-
+  if (!outcome.ok) {
     return {
-      status: "paid",
-      settlementTx: settleResult.transaction,
-      paymentResponseHeader: encodePaymentResponseHeader(settleResult),
-    };
-  } catch (err) {
-    return {
-      status: "settlement_failed",
-      reason: err instanceof Error ? err.message : "x402 facilitator communication error",
+      status: outcome.kind,
+      reason: outcome.reason,
       paymentRequired,
       paymentRequiredHeader,
     };
   }
+
+  return {
+    status: "paid",
+    settlementTx: outcome.settleResult.transaction,
+    paymentResponseHeader: encodePaymentResponseHeader(outcome.settleResult),
+  };
 }
 
 /**

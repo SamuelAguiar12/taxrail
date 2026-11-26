@@ -22,11 +22,16 @@ export interface Env {
   ALCHEMY_API_KEY?: string;
   /** 0x Swap API v2 key (stored as Cloudflare Secret) for live swap quotes & calldata. */
   ZEROX_API_KEY?: string;
+  /** Optional Coinbase CDP API Key ID (stored as Cloudflare Secret) for CDP x402 Bazaar facilitator. */
+  CDP_API_KEY_ID?: string;
+  /** Optional Coinbase CDP Ed25519 API Key Secret (stored as Cloudflare Secret) for CDP x402 Bazaar facilitator. */
+  CDP_API_KEY_SECRET?: string;
 }
 
 export const DEFAULT_PAY_TO_ADDRESS = "0x0202e70990d90325A1Dca322C91471Be774E4B6f";
 export const DEFAULT_X402_NETWORK = "eip155:8453";
 export const DEFAULT_X402_ASSET = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+export const COINBASE_CDP_FACILITATOR_URL = "https://api.cdp.coinbase.com/platform/v2/x402";
 export const DEFAULT_FACILITATOR_URL = "https://facilitator.payai.network";
 export const DEFAULT_PUBLIC_BASE_URL = "https://api.taxrail.online";
 

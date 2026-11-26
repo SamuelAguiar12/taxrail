@@ -1,5 +1,6 @@
 import { decodePaymentRequiredHeader } from "@x402/core/http";
 import { describe, expect, it } from "vitest";
+import { createCdpFacilitatorAuthHeaders } from "../src/cdp-auth.js";
 import app from "../src/index.js";
 import type { Env } from "../src/env.js";
 
@@ -793,6 +794,75 @@ describe("TaxRail Edge Worker", () => {
       };
       expect(unlockedPlan.planId).toBe(previewData.planId);
       expect(unlockedPlan.selectedLots?.[0]?.lotId).toBe("mcp-lot-hifo-high");
+    });
+  });
+
+  describe("Coinbase CDP Ed25519 JWT Auth", () => {
+    function decodeJwtPart<T>(b64Url: string): T {
+      const padded = b64Url.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(b64Url.length / 4) * 4, "=");
+      return JSON.parse(atob(padded)) as T;
+    }
+
+    function base64UrlToBytes(b64Url: string): Uint8Array {
+      const padded = b64Url.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(b64Url.length / 4) * 4, "=");
+      const bin = atob(padded);
+      return Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+    }
+
+    it("signs verifiable Ed25519 JWTs for verify, settle, and supported from a 64-byte CDP secret", async () => {
+      const keyPair = (await crypto.subtle.generateKey(
+        { name: "Ed25519" },
+        true,
+        ["sign", "verify"]
+      )) as CryptoKeyPair;
+
+      const pkcs8 = new Uint8Array((await crypto.subtle.exportKey("pkcs8", keyPair.privateKey)) as ArrayBuffer);
+      const rawPub = new Uint8Array((await crypto.subtle.exportKey("raw", keyPair.publicKey)) as ArrayBuffer);
+      const seed32 = pkcs8.subarray(pkcs8.length - 32);
+      const cdp64 = new Uint8Array(64);
+      cdp64.set(seed32, 0);
+      cdp64.set(rawPub, 32);
+      const cdpSecretB64 = btoa(String.fromCharCode(...cdp64));
+
+      const keyId = "organizations/test-org/apiKeys/test-key";
+      const getHeaders = createCdpFacilitatorAuthHeaders(keyId, cdpSecretB64);
+      const authHeaders = await getHeaders();
+
+      const expectedUris: Record<"verify" | "settle" | "supported", string> = {
+        verify: "POST api.cdp.coinbase.com/platform/v2/x402/verify",
+        settle: "POST api.cdp.coinbase.com/platform/v2/x402/settle",
+        supported: "GET api.cdp.coinbase.com/platform/v2/x402/supported",
+      };
+
+      for (const endpoint of ["verify", "settle", "supported"] as const) {
+        const bearer = authHeaders[endpoint].Authorization;
+        expect(bearer).toMatch(/^Bearer /);
+        const token = bearer!.slice("Bearer ".length);
+        const parts = token.split(".");
+        expect(parts).toHaveLength(3);
+
+        const header = decodeJwtPart<{ alg: string; typ: string; kid: string; nonce: string }>(parts[0]!);
+        const payload = decodeJwtPart<{ iss: string; sub: string; nbf: number; exp: number; uris: string[] }>(parts[1]!);
+
+        expect(header.alg).toBe("EdDSA");
+        expect(header.typ).toBe("JWT");
+        expect(header.kid).toBe(keyId);
+        expect(header.nonce).toMatch(/^[0-9a-f]{32}$/);
+        expect(payload.iss).toBe("cdp");
+        expect(payload.sub).toBe(keyId);
+        expect(payload.exp).toBeGreaterThan(payload.nbf);
+        expect(payload.uris).toEqual([expectedUris[endpoint]]);
+
+        const sigBytes = base64UrlToBytes(parts[2]!);
+        const signingInput = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+        const validSig = await crypto.subtle.verify(
+          { name: "Ed25519" },
+          keyPair.publicKey,
+          sigBytes.buffer.slice(sigBytes.byteOffset, sigBytes.byteOffset + sigBytes.byteLength) as ArrayBuffer,
+          signingInput
+        );
+        expect(validSig).toBe(true);
+      }
     });
   });
 });
