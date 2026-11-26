@@ -1,5 +1,7 @@
 # TaxRail
 
+[![TaxRail MCP server](https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail/badges/score.svg)](https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail)
+
 **The Autonomous Tax-Optimization Rail for AI Agents — US & Brazil**
 
 TaxRail is a non-custodial, deterministic pre-execution tax & treasury optimization layer built for autonomous AI agents, wallets, and fintech workflows. Before an agent executes a swap, borrows liquidity, or pays a corporate vendor, TaxRail simulates the tax impact across US and Brazilian regimes, builds non-custodial execution payloads (`0x v2`, `CoW Swap`, `Jupiter`, `Aave v3`), and settles pay-per-savings fees natively via **MCP × x402** on Base (`eip155:8453` USDC).
