@@ -4,6 +4,14 @@ import type { Env } from "./env.js";
 /** Default TTL for generated tax optimization plans (15 minutes). */
 export const DEFAULT_PLAN_TTL_SECONDS = 900;
 
+export interface ExecutionVerificationMeta {
+  chain: "base" | "ethereum" | "arbitrum";
+  treasuryWallet: string;
+  expectedFeeTokenAddress?: string;
+  expectedTreasuryFeeAtomic?: string;
+  expectedFeeUsd: number;
+}
+
 /**
  * Persisted plan record storing the full unlocked payload alongside its dynamic x402 quote.
  */
@@ -14,6 +22,7 @@ export interface StoredPlanRecord {
   createdAt: string;
   expiresAt: string;
   settlementTx?: string;
+  executionVerification?: ExecutionVerificationMeta;
 }
 
 /**

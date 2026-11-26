@@ -7,7 +7,8 @@ import { parseUnits } from "viem";
 import { type AaveSupportedChain, resolveEvmToken } from "./aave.js";
 
 const NATIVE_EVM_ETH_ADDRESS = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
-const MAX_INTEGRATOR_FEE_BPS = 100;
+const MAX_INTEGRATOR_FEE_BPS = 1000;
+const MAX_INTEGRATOR_FEE_PPM = 100_000;
 const AFFILIATE_SPLIT_RATIO = 0.2;
 
 const EVM_CHAIN_IDS: Record<AaveSupportedChain, number> = {
@@ -25,17 +26,37 @@ const EVM_EXTRA_TOKENS: Record<
       address: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
       decimals: 6,
     },
+    WSTETH: {
+      address: "0x7f39C581F595B53c5cb19bD0b3F8dA6c935E2Ca0",
+      decimals: 18,
+    },
+    CBETH: {
+      address: "0xBe9895146f7AF43049ca1c1AE358B0541Ea49704",
+      decimals: 18,
+    },
   },
   base: {
     USDT: {
       address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2",
       decimals: 6,
     },
+    WSTETH: {
+      address: "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
+      decimals: 18,
+    },
+    CBETH: {
+      address: "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
+      decimals: 18,
+    },
   },
   arbitrum: {
     USDT: {
       address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
       decimals: 6,
+    },
+    WSTETH: {
+      address: "0x5979D7b546E38E414F7E9822514be443A4800529",
+      decimals: 18,
     },
   },
 };
@@ -113,13 +134,23 @@ function toBaseUnitsString(amountDecimal: string, decimals: number): string {
 
 function selectVenue(chain: SupportedChain): SwapIntentPayload["venue"] {
   if (chain === "solana") return "jupiter";
-  if (chain === "ethereum") return "cow_swap";
   return "0x_v2";
 }
 
 function clampIntegratorFeeBps(rawFeeBps: number): number {
   if (!Number.isFinite(rawFeeBps)) return 0;
   return Math.min(MAX_INTEGRATOR_FEE_BPS, Math.max(0, Math.round(rawFeeBps)));
+}
+
+function clampIntegratorFeePpm(rawFeePpm: number | undefined, fallbackBps: number): number {
+  if (rawFeePpm !== undefined && Number.isFinite(rawFeePpm)) {
+    return Math.min(MAX_INTEGRATOR_FEE_PPM, Math.max(0, Math.round(rawFeePpm)));
+  }
+  return clampIntegratorFeeBps(fallbackBps) * 100;
+}
+
+function isValidEvmAddress(addr?: string): addr is string {
+  return Boolean(addr && /^0x[a-fA-F0-9]{40}$/.test(addr.trim()));
 }
 
 function buildFeeRecipients(
@@ -162,9 +193,11 @@ function buildRequestTemplate(params: {
   buyAssetResolved: ResolvedSwapAsset;
   sellAmountBaseUnits: string;
   integratorFeeBps: number;
+  integratorFeePpm: number;
   treasuryWallet: string;
+  affiliateWallet?: string;
   takerAddress?: string;
-}): Record<string, unknown> {
+}): { template: Record<string, unknown>; multiRecipientSplit: boolean } {
   const {
     venue,
     chain,
@@ -172,76 +205,78 @@ function buildRequestTemplate(params: {
     buyAssetResolved,
     sellAmountBaseUnits,
     integratorFeeBps,
+    integratorFeePpm,
     treasuryWallet,
+    affiliateWallet,
     takerAddress,
   } = params;
 
   if (venue === "jupiter") {
     return {
-      method: "GET",
-      baseUrl: "https://api.jup.ag",
-      endpoint: "/swap/v1/quote",
-      queryParams: {
-        inputMint: sellAssetResolved.identifier,
-        outputMint: buyAssetResolved.identifier,
-        amount: sellAmountBaseUnits,
-        slippageBps: 50,
-        platformFeeBps: integratorFeeBps,
-        feeAccount: treasuryWallet,
-        ...(takerAddress ? { userPublicKey: takerAddress } : {}),
-      },
-    };
-  }
-
-  if (venue === "cow_swap") {
-    return {
-      method: "POST",
-      baseUrl: "https://api.cow.fi/mainnet",
-      endpoint: "/api/v1/quote",
-      body: {
-        sellToken: sellAssetResolved.identifier,
-        buyToken: buyAssetResolved.identifier,
-        sellAmountBeforeFee: sellAmountBaseUnits,
-        kind: "sell",
-        from: takerAddress ?? "0x000000000000000000000000000000000000dEaD",
-        appData: {
-          version: "1.3.0",
-          appCode: "TaxRail",
-          metadata: {
-            partnerFee: {
-              bps: integratorFeeBps,
-              recipient: treasuryWallet,
-            },
-          },
+      multiRecipientSplit: false,
+      template: {
+        method: "GET",
+        baseUrl: "https://api.jup.ag",
+        endpoint: "/swap/v1/quote",
+        queryParams: {
+          inputMint: sellAssetResolved.identifier,
+          outputMint: buyAssetResolved.identifier,
+          amount: sellAmountBaseUnits,
+          slippageBps: 50,
+          platformFeeBps: integratorFeeBps,
+          feeAccount: treasuryWallet,
+          ...(takerAddress ? { userPublicKey: takerAddress } : {}),
         },
       },
     };
   }
 
   const evmChain = chain as AaveSupportedChain;
+  const normalizedAffiliate = affiliateWallet?.trim();
+  const canSplit =
+    isValidEvmAddress(normalizedAffiliate) &&
+    normalizedAffiliate.toLowerCase() !== treasuryWallet.toLowerCase() &&
+    integratorFeeBps >= 2;
+
+  let swapFeeRecipient = treasuryWallet;
+  let swapFeeBpsParam: number | string = integratorFeeBps;
+  let multiRecipientSplit = false;
+
+  if (canSplit && normalizedAffiliate) {
+    const affiliateShareBps = Math.max(1, Math.round(integratorFeeBps * AFFILIATE_SPLIT_RATIO));
+    const treasuryShareBps = Math.max(1, integratorFeeBps - affiliateShareBps);
+    swapFeeRecipient = `${treasuryWallet},${normalizedAffiliate}`;
+    swapFeeBpsParam = `${treasuryShareBps},${affiliateShareBps}`;
+    multiRecipientSplit = true;
+  }
+
   return {
-    method: "GET",
-    baseUrl: "https://api.0x.org",
-    endpoint: "/swap/allowance-holder/quote",
-    headers: {
-      "0x-version": "v2",
-    },
-    queryParams: {
-      chainId: EVM_CHAIN_IDS[evmChain],
-      sellToken: sellAssetResolved.identifier,
-      buyToken: buyAssetResolved.identifier,
-      sellAmount: sellAmountBaseUnits,
-      ...(takerAddress ? { taker: takerAddress } : {}),
-      swapFeeBps: integratorFeeBps,
-      swapFeeRecipient: treasuryWallet,
-      swapFeeToken: buyAssetResolved.identifier,
+    multiRecipientSplit,
+    template: {
+      method: "GET",
+      baseUrl: "https://api.0x.org",
+      endpoint: "/swap/allowance-holder/quote",
+      headers: {
+        "0x-version": "v2",
+      },
+      queryParams: {
+        chainId: EVM_CHAIN_IDS[evmChain],
+        sellToken: sellAssetResolved.identifier,
+        buyToken: buyAssetResolved.identifier,
+        sellAmount: sellAmountBaseUnits,
+        ...(takerAddress ? { taker: takerAddress } : {}),
+        swapFeeBps: swapFeeBpsParam,
+        swapFeePpm: canSplit ? undefined : integratorFeePpm,
+        swapFeeRecipient,
+        swapFeeToken: buyAssetResolved.identifier,
+      },
     },
   };
 }
 
 /**
- * Builds a venue-specific, fee-capped swap intent payload for 0x v2, CoW Swap,
- * or Jupiter with an 80/20 treasury/affiliate split when an affiliate wallet is present.
+ * Builds a venue-specific swap intent payload for 0x v2 (EVM, up to 1000 bps / 10%)
+ * or Jupiter (Solana) with an 80/20 treasury/affiliate split when an affiliate wallet is present.
  */
 export function buildSwapIntent(params: {
   chain: SupportedChain;
@@ -255,6 +290,10 @@ export function buildSwapIntent(params: {
   const venue = selectVenue(params.chain);
   const integratorFeeBps = clampIntegratorFeeBps(
     params.pricing.embeddedSwapFeeBps
+  );
+  const integratorFeePpm = clampIntegratorFeePpm(
+    params.pricing.embeddedSwapFeePpm,
+    integratorFeeBps
   );
 
   const sellAssetResolved = resolveSwapAsset(params.chain, params.sellAsset);
@@ -270,14 +309,16 @@ export function buildSwapIntent(params: {
     params.pricing.affiliateWallet
   );
 
-  const requestTemplate = buildRequestTemplate({
+  const { template: requestTemplate, multiRecipientSplit } = buildRequestTemplate({
     venue,
     chain: params.chain,
     sellAssetResolved,
     buyAssetResolved,
     sellAmountBaseUnits,
     integratorFeeBps,
+    integratorFeePpm,
     treasuryWallet: params.treasuryWallet,
+    affiliateWallet: params.pricing.affiliateWallet,
     takerAddress: params.takerAddress,
   });
 
@@ -288,6 +329,8 @@ export function buildSwapIntent(params: {
     buyAsset: params.buyAsset,
     sellAmountDecimal: params.sellAmountDecimal,
     integratorFeeBps,
+    integratorFeePpm,
+    multiRecipientSplit,
     feeRecipients,
     requestTemplate,
   };

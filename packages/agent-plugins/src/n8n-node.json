@@ -83,7 +83,7 @@
           "routing": {
             "request": {
               "method": "POST",
-              "url": "/api/v1/compare-borrow-vs-sell",
+              "url": "/api/v1/borrow-vs-sell",
               "body": {
                 "jurisdiction": "={{$parameter[\"jurisdiction\"]}}",
                 "regime": "={{$parameter[\"regime\"]}}",
@@ -110,7 +110,7 @@
           "routing": {
             "request": {
               "method": "POST",
-              "url": "/api/v1/classify-deductible-expense",
+              "url": "/api/v1/classify-expense",
               "body": {
                 "jurisdiction": "={{$parameter[\"jurisdiction\"]}}",
                 "regime": "={{$parameter[\"regime\"]}}",
@@ -122,6 +122,40 @@
                 "hasFiscalDocument": "={{$parameter[\"hasFiscalDocument\"]}}",
                 "fiscalDocumentId": "={{$parameter[\"fiscalDocumentId\"] || undefined}}",
                 "referrerWallet": "={{$parameter[\"referrerWallet\"] || $credentials.referrerWallet || undefined}}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Prepare Execution ($0 Upfront)",
+          "value": "prepareExecution",
+          "action": "Prepare 1-click swap or Aave v3 batch (10% fee from operation)",
+          "description": "Build ready-to-sign 0x v2 / Jupiter / Aave v3 calldata with TaxRail's 10% verified-savings fee embedded inside the operation ($0 upfront)",
+          "routing": {
+            "request": {
+              "method": "POST",
+              "url": "/api/v1/prepare-execution",
+              "body": {
+                "planId": "={{$parameter[\"planId\"]}}",
+                "takerAddress": "={{$parameter[\"walletAddress\"] || undefined}}",
+                "buyAsset": "={{$parameter[\"targetQuoteAsset\"] || undefined}}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Claim Dossier (Verify On-Chain)",
+          "value": "claimDossier",
+          "action": "Verify operation txHash and unlock CSV dossier",
+          "description": "Verify on-chain fee receipt by txHash and unlock SpecID lots + Form 8949 / DeCripto CSV",
+          "routing": {
+            "request": {
+              "method": "POST",
+              "url": "/api/v1/claim-dossier",
+              "body": {
+                "planId": "={{$parameter[\"planId\"]}}",
+                "txHash": "={{$parameter[\"txHash\"]}}",
+                "chain": "={{$parameter[\"chain\"] || undefined}}"
               }
             }
           }
@@ -197,7 +231,7 @@
       "type": "options",
       "displayOptions": {
         "show": {
-          "operation": ["checkTaxImpact", "compareBorrowVsSell"]
+          "operation": ["checkTaxImpact", "compareBorrowVsSell", "prepareExecution", "claimDossier"]
         }
       },
       "options": [
@@ -215,7 +249,7 @@
       "default": "",
       "displayOptions": {
         "show": {
-          "operation": ["checkTaxImpact", "compareBorrowVsSell"]
+          "operation": ["checkTaxImpact", "compareBorrowVsSell", "prepareExecution", "claimDossier"]
         }
       }
     },
@@ -474,7 +508,19 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["unlockPlan"]
+          "operation": ["unlockPlan", "prepareExecution", "claimDossier"]
+        }
+      }
+    },
+    {
+      "displayName": "Settlement Transaction Hash",
+      "name": "txHash",
+      "type": "string",
+      "default": "",
+      "description": "On-chain swap or Aave borrow txHash (0x...) to verify fee receipt and unlock dossier",
+      "displayOptions": {
+        "show": {
+          "operation": ["claimDossier"]
         }
       }
     },

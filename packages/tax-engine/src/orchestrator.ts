@@ -63,6 +63,8 @@ export function analyzeCryptoDisposal(
       estimatedTransactionUsd > 0 ? estimatedTransactionUsd : input.targetProceedsUsd,
     pricingTier: input.pricingTier,
     referrerWallet: input.referrerWallet,
+    supportsOnchainFee: true,
+    isBorrowOperation: false,
   });
 
   const redacted: CheckTaxImpactRedactedResponse = {
@@ -77,6 +79,15 @@ export function analyzeCryptoDisposal(
     taxSavedUsd: optimization.taxSavedUsd,
     pricing,
     warnings: [...optimization.warnings],
+    zeroUpfrontExecution: {
+      tool: "prepare_execution",
+      endpoint: "/api/v1/prepare-execution",
+      claimEndpoint: "/api/v1/claim-dossier",
+      planId,
+      upfrontPaymentRequiredUsd: 0,
+      feePaidFromOperationUsd: pricing.operationFeeUsd,
+      feeRatePct: pricing.feeRatePct,
+    },
     nextAction: {
       tool: "unlock_tax_plan",
       endpoint: "/api/v1/unlock-plan",
@@ -118,6 +129,8 @@ export function analyzeBorrowVsSell(input: BorrowVsSellInput): {
     estimatedTransactionUsd: input.liquidityNeededUsd,
     pricingTier: input.pricingTier,
     referrerWallet: input.referrerWallet,
+    supportsOnchainFee: true,
+    isBorrowOperation: true,
   });
 
   const preview: BorrowVsSellPreview = {
@@ -159,6 +172,7 @@ export function analyzeDeductibleExpense(input: DeductibleExpenseInput): {
     estimatedTransactionUsd: input.amountUsd,
     pricingTier: input.pricingTier,
     referrerWallet: input.referrerWallet,
+    supportsOnchainFee: false,
   });
 
   const preview: DeductibleExpensePreview = {

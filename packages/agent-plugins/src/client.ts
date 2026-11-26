@@ -1,16 +1,22 @@
 import {
   BorrowVsSellInputSchema,
   CheckTaxImpactInputSchema,
+  ClaimDossierInputSchema,
   DeductibleExpenseInputSchema,
+  PrepareExecutionInputSchema,
   UnlockPlanInputSchema,
   type BorrowVsSellInput,
   type BorrowVsSellPreview,
   type Br35kStatusResult,
   type CheckTaxImpactInput,
   type CheckTaxImpactRedactedResponse,
+  type ClaimDossierInput,
+  type ClaimDossierResponse,
   type DeductibleExpenseInput,
   type DeductibleExpensePreview,
   type FullTaxOptimizationPlan,
+  type PrepareExecutionInput,
+  type PrepareExecutionResponse,
   type PreTradeCheckResult,
   type PricingTier,
   type WalletTlhScanResult,
@@ -86,6 +92,8 @@ export interface TaxRailClient {
     input: DeductibleExpenseInput
   ): Promise<DeductibleExpensePreview>;
   unlockTaxPlan(input: UnlockTaxPlanActionInput): Promise<UnlockPlanResult>;
+  prepareExecution(input: PrepareExecutionInput): Promise<PrepareExecutionResponse>;
+  claimDossier(input: ClaimDossierInput): Promise<ClaimDossierResponse>;
   scanWalletTlh(params: {
     walletAddress: string;
     chain?: "base" | "ethereum" | "arbitrum";
@@ -117,6 +125,8 @@ export interface TaxRailToolSpec<TSchema extends z.ZodTypeAny, TResult> {
     | "check_tax_impact"
     | "compare_borrow_vs_sell"
     | "classify_deductible_expense"
+    | "prepare_execution"
+    | "claim_dossier"
     | "unlock_tax_plan";
   description: string;
   schema: TSchema;
@@ -315,6 +325,16 @@ export function createTaxRailClient(
       );
     },
 
+    prepareExecution(input) {
+      const parsed = PrepareExecutionInputSchema.parse(input);
+      return postJson<PrepareExecutionResponse>("/api/v1/prepare-execution", parsed);
+    },
+
+    claimDossier(input) {
+      const parsed = ClaimDossierInputSchema.parse(input);
+      return postJson<ClaimDossierResponse>("/api/v1/claim-dossier", parsed);
+    },
+
     scanWalletTlh(params) {
       const qs = new URLSearchParams({
         walletAddress: params.walletAddress,
@@ -394,9 +414,25 @@ export const TAXRAIL_TOOL_SPECS = [
       client.classifyDeductibleExpense(input),
   },
   {
+    name: "prepare_execution",
+    description:
+      "FREE $0-upfront pre-execution builder: returns ready-to-sign 0x v2 / Jupiter swap calldata or Aave v3 atomic borrow batch paying TaxRail's exact 10% verified-savings fee directly out of the operation.",
+    schema: PrepareExecutionInputSchema,
+    execute: (client: TaxRailClient, input: PrepareExecutionInput) =>
+      client.prepareExecution(input),
+  },
+  {
+    name: "claim_dossier",
+    description:
+      "Verifies the settled swap or Aave borrow txHash on-chain and unlocks exact SpecID lots + Form 8949 / Brazil DeCripto CSV dossier with $0 upfront.",
+    schema: ClaimDossierInputSchema,
+    execute: (client: TaxRailClient, input: ClaimDossierInput) =>
+      client.claimDossier(input),
+  },
+  {
     name: "unlock_tax_plan",
     description:
-      "Unlocks the full executable tax optimization plan (selected lots, non-custodial 0x/CoW/Jupiter swap intent or Aave v3 calldata, and Form 8949 / QuickBooks / Lei 14.754 / SPED accounting dossier) via x402 Base USDC settlement.",
+      "Dossier-only / corporate expense fallback via x402 Base USDC settlement. Unlocks selected lots, calldata, and Form 8949 / QuickBooks / Lei 14.754 / SPED accounting dossier.",
     schema: UnlockTaxPlanActionInputSchema,
     execute: (client: TaxRailClient, input: UnlockTaxPlanActionInput) =>
       client.unlockTaxPlan(input),

@@ -7,7 +7,9 @@ import {
 import {
   BorrowVsSellInputSchema,
   CheckTaxImpactRequestSchema,
+  ClaimDossierInputSchema,
   DeductibleExpenseInputSchema,
+  PrepareExecutionInputSchema,
   UnlockPlanInputSchema,
 } from "@taxrail/shared";
 import { z } from "zod";
@@ -18,7 +20,9 @@ import {
   executeBorrowVsSell,
   executeBr35kStatus,
   executeCheckTaxImpact,
+  executeClaimDossier,
   executeClassifyExpense,
+  executePrepareExecution,
   executePreTradeCheck,
   executeWalletTlhScan,
 } from "./service.js";
@@ -101,7 +105,7 @@ function jsonToolError(payload: unknown) {
 }
 
 /**
- * Creates a stateless per-request McpServer instance wired with all 7 TaxRail tools.
+ * Creates a stateless per-request McpServer instance wired with all 9 TaxRail tools.
  */
 export function createTaxRailMcpServer(deps: {
   planStore: PlanStore;
@@ -111,7 +115,7 @@ export function createTaxRailMcpServer(deps: {
   const server = new McpServer(
     {
       name: "taxrail",
-      version: "0.1.0",
+      version: "0.3.0",
     },
     {
       capabilities: {
@@ -374,6 +378,56 @@ export function createTaxRailMcpServer(deps: {
       });
 
       return jsonToolSuccess(status);
+    }
+  );
+
+  server.registerTool(
+    "prepare_execution",
+    {
+      title: "Prepare $0-Upfront 1-Click Execution (Pay 10% From Operation)",
+      description:
+        "FREE step before signing: builds ready-to-sign 0x v2 / Jupiter swap calldata or Aave v3 atomic borrow batch with TaxRail's exact 10% verified-savings fee embedded inside the operation ($0 upfront cost). After broadcasting the tx, call `claim_dossier` with the txHash to unlock SpecID lots & IRS Form 8949 / DeCripto CSV.",
+      inputSchema: PrepareExecutionInputSchema,
+    },
+    async (args) => {
+      const result = await executePrepareExecution(args, deps);
+      if (!result.ok) {
+        return jsonToolError({ status: result.status, error: result.error, planId: args.planId });
+      }
+      return jsonToolSuccess(result.data);
+    }
+  );
+
+  const ClaimDossierToolSchema = ClaimDossierInputSchema.extend({
+    paymentSignature: z
+      .string()
+      .optional()
+      .describe("Optional dev-bypass token for automated testing"),
+  });
+
+  server.registerTool(
+    "claim_dossier",
+    {
+      title: "Claim Tax Dossier After On-Chain Execution",
+      description:
+        "Verifies the settled swap or Aave borrow txHash on-chain (confirming TaxRail's 10% fee transfer from the operation) and immediately returns SpecID selectedLots + Form 8949 / Brazil DeCripto accounting dossier.",
+      inputSchema: ClaimDossierToolSchema,
+    },
+    async (args) => {
+      const devBypass = Boolean(
+        deps.env.X402_DEV_BYPASS_TOKEN &&
+          args.paymentSignature?.trim() === `dev-bypass:${deps.env.X402_DEV_BYPASS_TOKEN}`
+      );
+      const result = await executeClaimDossier(args, deps, { devBypass });
+      if (!result.ok) {
+        return jsonToolError({
+          status: result.status,
+          error: result.error,
+          planId: args.planId,
+          ...(result.explorerUrl ? { explorerUrl: result.explorerUrl } : {}),
+        });
+      }
+      return jsonToolSuccess(result.data);
     }
   );
 

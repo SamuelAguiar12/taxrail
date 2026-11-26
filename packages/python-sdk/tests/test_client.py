@@ -84,6 +84,28 @@ class _MockTaxRailHandler(BaseHTTPRequestHandler):
                 },
             )
             return
+        if self.path == "/api/v1/prepare-execution":
+            self._send_json(
+                200,
+                {
+                    "planId": body.get("planId"),
+                    "upfrontCostUsd": 0,
+                    "feePaidFromOperationUsd": 31.0,
+                    "executionPayload": {"type": "SWAP_0X_V2"},
+                },
+            )
+            return
+        if self.path == "/api/v1/claim-dossier":
+            self._send_json(
+                200,
+                {
+                    "verified": True,
+                    "planId": body.get("planId"),
+                    "settlementTx": body.get("txHash"),
+                    "plan": {"planId": body.get("planId")},
+                },
+            )
+            return
         self._send_json(404, {"error": "Not found"})
 
 
@@ -146,12 +168,27 @@ class TaxRailPythonSdkTest(unittest.TestCase):
 
     def test_framework_tool_wrappers(self) -> None:
         openai_tools = get_openai_tools()
-        self.assertEqual(len(openai_tools), 4)
+        self.assertEqual(len(openai_tools), 6)
         client = TaxRailClient(base_url=self.base_url)
         lc_tools = as_langchain_tools(client)
         crew_tools = as_crewai_tools(client)
-        self.assertEqual(len(lc_tools), 4)
-        self.assertEqual(len(crew_tools), 4)
+        self.assertEqual(len(lc_tools), 6)
+        self.assertEqual(len(crew_tools), 6)
+
+        prep = client.prepare_execution(
+            plan_id="plan_py_test_123",
+            taker_address="0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1",
+            buy_asset="wstETH",
+        )
+        self.assertEqual(prep["upfrontCostUsd"], 0)
+        self.assertEqual(prep["feePaidFromOperationUsd"], 31.0)
+
+        claimed = client.claim_dossier(
+            plan_id="plan_py_test_123",
+            tx_hash="0x" + "a" * 64,
+            chain="base",
+        )
+        self.assertTrue(claimed["verified"])
 
         # Calling a fallback tool dict on 402 returns JSON string with status=402
         br_tool = [t for t in lc_tools if (t["name"] if isinstance(t, dict) else t.name) == "taxrail_br_35k_status"][0]

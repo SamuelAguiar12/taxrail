@@ -50,5 +50,7 @@ export function createTaxRailLangChainTools(
     toLangChainTool(client, TAXRAIL_TOOL_SPECS[1]),
     toLangChainTool(client, TAXRAIL_TOOL_SPECS[2]),
     toLangChainTool(client, TAXRAIL_TOOL_SPECS[3]),
+    toLangChainTool(client, TAXRAIL_TOOL_SPECS[4]),
+    toLangChainTool(client, TAXRAIL_TOOL_SPECS[5]),
   ];
 }

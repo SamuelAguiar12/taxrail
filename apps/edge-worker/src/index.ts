@@ -1,7 +1,9 @@
 import {
   BorrowVsSellInputSchema,
   CheckTaxImpactRequestSchema,
+  ClaimDossierInputSchema,
   DeductibleExpenseInputSchema,
+  PrepareExecutionInputSchema,
   SupportedChainSchema,
   UnlockPlanInputSchema,
 } from "@taxrail/shared";
@@ -32,7 +34,9 @@ import {
   executeBorrowVsSell,
   executeBr35kStatus,
   executeCheckTaxImpact,
+  executeClaimDossier,
   executeClassifyExpense,
+  executePrepareExecution,
   executePreTradeCheck,
   executeQuickOptimize,
   executeWalletTlhScan,
@@ -242,6 +246,8 @@ export function createApp(): Hono<{ Bindings: Env }> {
         openapi: `${baseUrl}/openapi.json`,
         preTradeCheck: `${baseUrl}/api/v1/x402/pre-trade-check`,
         br35kStatus: `${baseUrl}/api/v1/x402/br-35k-status`,
+        prepareExecution: `${baseUrl}/api/v1/prepare-execution`,
+        claimDossier: `${baseUrl}/api/v1/claim-dossier`,
         feedback: `${baseUrl}/api/v1/feedback`,
         reputation: `${baseUrl}/api/v1/reputation`,
         mcp: `${baseUrl}/mcp`,
@@ -687,6 +693,80 @@ export function createApp(): Hono<{ Bindings: Env }> {
     }
 
     return c.json(result.record.plan, 200);
+  });
+
+  // $0-Upfront 1-Click Execution preparation (10% fee paid directly from operation)
+  app.post("/api/v1/prepare-execution", async (c) => {
+    const parsed = await parseAndValidateBody(c.req.raw, PrepareExecutionInputSchema);
+    if (!parsed.ok) {
+      return c.json({ error: parsed.error, issues: parsed.issues }, 400);
+    }
+
+    const planStore = createPlanStore(c.env);
+    const result = await executePrepareExecution(parsed.data, {
+      planStore,
+      env: c.env,
+    });
+
+    if (!result.ok) {
+      return c.json({ error: result.error, planId: parsed.data.planId }, result.status);
+    }
+
+    console.log(
+      JSON.stringify({
+        event: "prepare_execution",
+        planId: result.data.planId,
+        planType: result.data.planType,
+        chain: result.data.chain,
+        feePaidFromOperationUsd: result.data.feePaidFromOperationUsd,
+      })
+    );
+
+    return c.json(result.data, 200);
+  });
+
+  // Verify on-chain operation fee receipt and unlock SpecID lots + accounting CSV dossier
+  app.post("/api/v1/claim-dossier", async (c) => {
+    const parsed = await parseAndValidateBody(c.req.raw, ClaimDossierInputSchema);
+    if (!parsed.ok) {
+      return c.json({ error: parsed.error, issues: parsed.issues }, 400);
+    }
+
+    const paymentHeader =
+      c.req.header("PAYMENT-SIGNATURE") ?? c.req.header("X-PAYMENT") ?? "";
+    const devBypass = Boolean(
+      c.env.X402_DEV_BYPASS_TOKEN &&
+        paymentHeader.trim() === `dev-bypass:${c.env.X402_DEV_BYPASS_TOKEN}`
+    );
+
+    const planStore = createPlanStore(c.env);
+    const result = await executeClaimDossier(
+      parsed.data,
+      { planStore, env: c.env },
+      { devBypass }
+    );
+
+    if (!result.ok) {
+      return c.json(
+        {
+          error: result.error,
+          planId: parsed.data.planId,
+          ...(result.explorerUrl ? { explorerUrl: result.explorerUrl } : {}),
+        },
+        result.status
+      );
+    }
+
+    console.log(
+      JSON.stringify({
+        event: "claim_dossier_verified",
+        planId: result.data.planId,
+        settlementTx: result.data.settlementTx,
+        feePaidUsd: result.data.feePaidUsd,
+      })
+    );
+
+    return c.json(result.data, 200);
   });
 
   // 1-step x402-gated optimization endpoint (GET probe + POST pay-then-execute)

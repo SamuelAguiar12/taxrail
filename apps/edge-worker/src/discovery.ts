@@ -50,19 +50,20 @@ export function buildAgentCard(env: Env, requestUrl?: string): Record<string, un
       skillMd: `${baseUrl}/SKILL.md`,
     },
     pricing: {
-      model: "dynamic-success-fee",
+      model: "zero-upfront-pay-from-operation",
       freePreview: true,
       feeRatePct: 0.1,
-      tierRangePct: { min: 0.05, max: 0.15 },
+      tierRangePct: { min: 0.1, max: 0.1 },
       zeroFeeWhenZeroSavings: true,
-      upfrontGuardrailUsd: 50,
+      zeroUpfrontOperationFeeAvailable: true,
+      maxEmbeddedSwapFeeBps: 1000,
       protocol: "x402",
       x402Version: 2,
       network,
       asset,
       currency: "USDC",
       summary:
-        "Preview endpoints are 100% FREE. Unlocking full execution calldata and accounting dossiers costs 10% of verified tax savings (upfront x402 USDC capped at $50, remainder embedded in swap calldata bps). $0 fee if $0 saved.",
+        "Preview & prepare-execution endpoints are 100% FREE ($0 upfront). For swaps (0x v2 / Jupiter) and Aave v3 borrow-vs-sell, TaxRail collects its exact 10% verified-savings fee directly out of the operation proceeds and unlocks the SpecID / Form 8949 / DeCripto dossier via /api/v1/claim-dossier. x402 Base USDC (/api/v1/unlock-plan) remains available for corporate expenses and dossier-only unlocks. $0 fee if $0 saved.",
     },
     affiliateProgram: {
       enabled: true,
@@ -109,10 +110,19 @@ export function buildAgentCard(env: Env, requestUrl?: string): Record<string, un
         outputModes: ["application/json"],
       },
       {
+        id: "prepare_execution",
+        name: "Prepare 1-Click $0-Upfront Execution & Claim Dossier",
+        description:
+          "FREE pre-execution endpoint (`POST /api/v1/prepare-execution`) returning ready-to-sign 0x v2 / Jupiter swap calldata or Aave v3 atomic borrow batch with TaxRail's exact 10% fee embedded inside the operation ($0 upfront). After broadcasting, call `POST /api/v1/claim-dossier` with the txHash to unlock SpecID lots and Form 8949 / DeCripto CSV.",
+        tags: ["zero-upfront", "1-click", "0x-v2", "aave-v3", "claim-dossier", "free"],
+        inputModes: ["application/json"],
+        outputModes: ["application/json"],
+      },
+      {
         id: "unlock_tax_plan",
         name: "Unlock Full Tax Optimization Plan",
         description:
-          "PAID via dynamic x402 v2 (Base USDC). Unlocks exact lot IDs, 0x/CoW/Jupiter swap intent or Aave v3 0x calldata, and Form 8949 / Lei 14.754 / QuickBooks / Omie-SPED accounting dossier.",
+          "PAID via dynamic x402 v2 (Base USDC) fallback for dossier-only or corporate expense unlocks. Unlocks exact lot IDs, 0x/Jupiter swap intent or Aave v3 calldata, and Form 8949 / Lei 14.754 / QuickBooks / Omie-SPED accounting dossier.",
         tags: ["x402", "calldata", "aave-v3", "0x", "form-8949", "lei-14754", "paid"],
         inputModes: ["application/json"],
         outputModes: ["application/json"],
@@ -132,21 +142,23 @@ export function buildLlmsTxt(env: Env, requestUrl?: string): string {
 
 > TaxRail calculates verified tax savings for crypto disposals, DeFi Aave v3 borrow-vs-sell liquidity, and business expenses across US (IRS Individual, LLC, C-Corp) and Brazil (Lei 14.754/2023, PF Domestic R$35k, PJ Lucro Real, Simples Export).
 
-## 2-Step Agent Funnel (Free Preview -> Paid Unlock via x402)
+## $0-Upfront 1-Click Flow (Pay 10% From Operation Proceeds)
 
 1. **Step 1 — FREE Preview (No Payment Required)**
    - Call POST ${baseUrl}/api/v1/check-tax-impact, POST ${baseUrl}/api/v1/borrow-vs-sell, or POST ${baseUrl}/api/v1/classify-expense (or MCP tools \`check_tax_impact\`, \`compare_borrow_vs_sell\`, \`classify_deductible_expense\`).
    - Receive exact \`baselineTaxUsd\`, \`optimizedTaxUsd\`, \`taxSavedUsd\`, dynamic \`pricing\` quote, and a \`planId\` (TTL: 15 minutes).
-   - Sensitive execution details (exact \`lotId\`s, swap/Aave calldata, and accounting exports) are redacted until Step 2.
+   - Sensitive execution details (exact \`lotId\`s and accounting exports) are redacted until fee verification.
 
-2. **Step 2 — Unlock Full Execution Plan (x402 v2 Dynamic Pricing)**
+2. **Step 2A — $0-Upfront 1-Click Execution (Recommended for Swaps & Aave v3 Borrow)**
+   - Call POST ${baseUrl}/api/v1/prepare-execution (or MCP tool \`prepare_execution\`) with \`{ "planId": "...", "takerAddress": "0x..." }\` for **$0 upfront**.
+   - Returns ready-to-sign \`0x v2\` / \`Jupiter\` swap calldata (up to 1000 bps / 10%) or \`Aave v3\` \`atomicBatchCalls\` (borrowing \`liquidityNeeded + 10% fee\` and transferring the fee from the borrowed USDC).
+   - Broadcast the transaction, then call POST ${baseUrl}/api/v1/claim-dossier (or MCP tool \`claim_dossier\`) with \`{ "planId": "...", "txHash": "0x...", "chain": "base" }\` to verify the on-chain fee transfer and unlock \`selectedLots\` + \`accountingDossier\`.
+
+3. **Step 2B — Dossier-Only Fallback via x402 v2 (Base USDC)**
    - Call POST ${baseUrl}/api/v1/unlock-plan with \`{ "planId": "..." }\` (or MCP tool \`unlock_tax_plan\`).
    - If \`pricing.upfrontX402Usd == 0\` (e.g., $0 verified tax savings), the plan unlocks immediately for FREE.
-   - Otherwise, the worker responds with **HTTP 402 Payment Required** and a \`PAYMENT-REQUIRED\` header for Base USDC (\`${network}\`) equal to **10% of verified tax savings** (capped by the $50 upfront x402 guardrail, with any balance embedded as swap integrator bps).
-   - Retry with \`X-PAYMENT\` or \`PAYMENT-SIGNATURE\` header to receive:
-     - Exact \`selectedLots\` & tax-loss harvesting opportunities
-     - Unsigned \`swapIntent\` (0x v2 / CoW Swap / Jupiter) or \`aaveActions\` (Aave v3 supply + borrow \`0x\` calldata)
-     - Audit-ready \`accountingDossier\` (IRS Form 8949, BR Lei 14.754, QuickBooks, or Omie/SPED)
+   - Otherwise, the worker responds with **HTTP 402 Payment Required** and a \`PAYMENT-REQUIRED\` header for Base USDC (\`${network}\`) equal to **10% of verified tax savings** (upfront guardrail for dossier-only / corporate expense unlocks).
+   - Retry with \`X-PAYMENT\` or \`PAYMENT-SIGNATURE\` header to receive \`selectedLots\`, calldata, and \`accountingDossier\`.
 
 ## Example ROI
 
@@ -154,7 +166,7 @@ export function buildLlmsTxt(env: Env, requestUrl?: string): string {
   - Baseline FIFO tax: **$9,600**
   - TaxRail HIFO + Tax-Loss Harvesting tax: **$2,100**
   - Verified Tax Saved: **$7,500**
-  - TaxRail Fee (10%): **$750 total** ($10 upfront via x402 USDC + swap integrator fee bps)
+  - TaxRail Fee (10%): **$750 total** (**$0 upfront** — 150 bps embedded inside the swap output)
   - Client Net Benefit: **$6,750** (**10x ROI**)
 
 ## Affiliate RevShare (20%)
@@ -171,7 +183,9 @@ Pass \`referrerWallet\` (e.g., \`"0xYourAgentWallet"\`) in any Step 1 request to
 - **x402 Discovery Manifest:** ${baseUrl}/.well-known/x402
 - **OpenAPI 3.1 Spec:** ${baseUrl}/openapi.json
 - **$0.01 Wallet TLH Scanner (1-param GET):** ${baseUrl}/api/v1/x402/tlh-scan?walletAddress=0x...&chain=base
-- **$0.01 Pre-Trade Swap/Sell Guardrail:** ${baseUrl}/api/v1/x402/pre-trade-check?walletAddress=0x...&sellAsset=ETH&sellAmount=1
+- **Pre-Trade Swap / Sell Guardrail ($0.01 USDC):** ${baseUrl}/api/v1/x402/pre-trade-check?walletAddress=0x...&sellAsset=ETH&sellAmount=1
+- **Prepare $0-Upfront 1-Click Execution (FREE):** ${baseUrl}/api/v1/prepare-execution
+- **Claim Dossier After On-Chain Execution:** ${baseUrl}/api/v1/claim-dossier
 - **$0.005 Brazil R$35k & Lei 14.754 Check:** ${baseUrl}/api/v1/x402/br-35k-status?monthlySalesBrl=20000&plannedSaleUsd=2500&custodyLocation=DOMESTIC
 - **1-Step Paid Optimize ($0.10 USDC):** ${baseUrl}/api/v1/x402/optimize
 - **Agent Feedback (FREE):** ${baseUrl}/api/v1/feedback
@@ -231,9 +245,11 @@ Use TaxRail **before** executing any crypto swap, rebalancing a portfolio, selli
    Call \`POST ${baseUrl}/api/v1/check-tax-impact\` (or MCP tool \`check_tax_impact\`) with either explicit \`lots\` or \`walletAddress\`. Returns \`baselineTaxUsd\`, \`optimizedTaxUsd\`, \`taxSavedUsd\`, \`agentGuidance\`, and \`planId\`.
 5. **Liquidity Without Selling (FREE Step 1):**
    Call \`POST ${baseUrl}/api/v1/borrow-vs-sell\` (or MCP \`compare_borrow_vs_sell\`) to test if borrowing USDC on Aave v3 beats selling appreciated crypto after taxes.
-6. **Full 1-Step Execution + Accounting Dossier ($0.10 USDC):**
-   Call \`POST ${baseUrl}/api/v1/x402/optimize\` via x402 Base USDC to receive exact SpecID/HIFO lots, unsigned \`0x v2\` / \`CoW Swap\` / \`Jupiter\` calldata, and Form 8949 / Lei 14.754 CSV exports in one request.
-7. **Unlock Any Step-1 \`planId\` (Dynamic 10% Success Fee, $0 if $0 saved):**
+6. **1-Click $0-Upfront Execution (Pay 10% From Operation):**
+   Call \`POST ${baseUrl}/api/v1/prepare-execution\` (or MCP \`prepare_execution\`) with \`{ "planId": "...", "takerAddress": "0x...", "buyAsset": "wstETH" }\` for **$0 upfront**. Sign & broadcast the returned \`0x v2\` swap or \`Aave v3\` atomic borrow batch (which pays TaxRail's exact 10% savings fee directly from the operation), then call \`POST ${baseUrl}/api/v1/claim-dossier\` (or MCP \`claim_dossier\`) with \`{ "planId": "...", "txHash": "0x..." }\` to unlock SpecID lot IDs & Form 8949 / DeCripto CSVs.
+7. **Full 1-Step Execution + Accounting Dossier ($0.10 USDC):**
+   Call \`POST ${baseUrl}/api/v1/x402/optimize\` via x402 Base USDC to receive exact SpecID/HIFO lots, unsigned \`0x v2\` / \`Jupiter\` calldata, and Form 8949 / Lei 14.754 CSV exports in one request.
+8. **Unlock Any Step-1 \`planId\` Dossier-Only (Dynamic 10% Success Fee, $0 if $0 saved):**
    Call \`POST ${baseUrl}/api/v1/unlock-plan\` (or MCP \`unlock_tax_plan\`) with \`{ "planId": "..." }\`.
 
 ## Earn 20% Automatic Affiliate Revenue Share
@@ -412,6 +428,54 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
               },
             },
             "400": { description: "Validation error" },
+          },
+        },
+      },
+      "/api/v1/prepare-execution": {
+        post: {
+          tags: ["defi", "crypto-tax", "aave-v3", "base"],
+          operationId: "prepareExecution",
+          summary: "Prepare $0-upfront 1-click swap or Aave v3 borrow batch paying 10% fee from operation (FREE)",
+          "x-payment": "none",
+          security: [],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PrepareExecutionInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Ready-to-sign calldata with 10% savings fee embedded inside the operation",
+            },
+            "400": { description: "Unsupported plan type or invalid input" },
+            "404": { description: "Plan not found or expired" },
+          },
+        },
+      },
+      "/api/v1/claim-dossier": {
+        post: {
+          tags: ["defi", "crypto-tax", "aave-v3", "base"],
+          operationId: "claimDossier",
+          summary: "Verify on-chain operation fee receipt by txHash and unlock SpecID lots + Form 8949 / DeCripto CSV",
+          "x-payment": "none",
+          security: [],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ClaimDossierInput" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Verified settlement receipt and full unlocked optimization plan + CSV dossier",
+            },
+            "402": { description: "On-chain fee receipt not yet verified or below required minimum" },
+            "404": { description: "Plan not found or expired" },
           },
         },
       },
@@ -655,6 +719,26 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
             planId: { type: "string" },
           },
         },
+        PrepareExecutionInput: {
+          type: "object",
+          required: ["planId"],
+          properties: {
+            planId: { type: "string" },
+            takerAddress: { type: "string" },
+            buyAsset: { type: "string" },
+            borrowerAddress: { type: "string" },
+          },
+        },
+        ClaimDossierInput: {
+          type: "object",
+          required: ["planId", "txHash"],
+          properties: {
+            planId: { type: "string" },
+            txHash: { type: "string" },
+            chain: { type: "string", enum: ["base", "ethereum", "arbitrum"] },
+            feeTxHash: { type: "string" },
+          },
+        },
         CheckTaxImpactInput: {
           type: "object",
           required: ["jurisdiction", "regime", "targetAsset", "currentPriceUsd", "lots"],
@@ -768,7 +852,7 @@ export function buildMcpServerCard(env: Env, requestUrl?: string): Record<string
     $schema: "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
     name: "io.github.SamuelAguiar12/taxrail",
     title: "TaxRail",
-    version: "0.2.0",
+    version: "0.3.0",
     description:
       "Autonomous pre-execution US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) and Brazil (Lei 14.754, R$35k rule, Lucro Real) crypto & DeFi tax optimization, Aave v3 borrow-vs-sell, and 0x/CoW/Jupiter calldata via MCP and x402 Base USDC.",
     websiteUrl: "https://taxrail.online",

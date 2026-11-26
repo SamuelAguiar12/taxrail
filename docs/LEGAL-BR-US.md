@@ -15,7 +15,7 @@ A primeira linha de defesa regulatória da TaxRail — tanto perante o Fisco/CVM
 ### O que a TaxRail NÃO Faz
 1. **Sem exercício ilegal de consultoria tributária / advocacia:** Não emite parecer jurídico vinculante nem assina declarações fiscais em nome de terceiros. Toda resposta da API/MCP inclui `disclaimer` explícito exigindo revisão por contador (BR) ou CPA (US).
 2. **Sem atuação regulada pela CVM (Valores Mobiliários):** Não faz recomendação de compra/venda de ativos financeiros, gestão de carteira discricionária ou oferta pública de investimento. O agente ou usuário já decidiu o ativo/liquidez desejada; o software apenas calcula impacto tributário e monta o *calldata* técnico solicitado.
-3. **Sem custódia ou intermediação financeira (VASP / Instituição de Pagamento):** A TaxRail não recebe depósitos de clientes para repassar a terceiros, não guarda chaves privadas e não opera livro de ofertas. Os pagamentos `x402` são exclusivamente remuneração pelo licenciamento/uso da API de software.
+3. **Sem custódia ou intermediação financeira (VASP / Instituição de Pagamento):** A TaxRail não recebe depósitos de clientes para repassar a terceiros, não guarda chaves privadas e não opera livro de ofertas. Tanto os pagamentos `x402` quanto os `integrator_fees` (`0x v2` / `Jupiter`) e repasses de taxa de software na própria operação (`Aave v3` batch) são exclusivamente remuneração pelo licenciamento/uso da API de software.
 
 ---
 

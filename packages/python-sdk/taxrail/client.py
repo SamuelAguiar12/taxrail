@@ -234,13 +234,47 @@ class TaxRailClient:
         plan_id: str,
         payment_signature: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Step-2 x402 unlock returning exact SpecID lot IDs, unsigned swap/Aave calldata, and CSV/JSON dossiers."""
+        """Step-2 x402 fallback unlock returning exact SpecID lot IDs, calldata, and CSV/JSON dossiers."""
         return self._request(
             "POST",
             "/api/v1/unlock-plan",
             json_body={"planId": plan_id},
             payment_signature=payment_signature,
         )
+
+    def prepare_execution(
+        self,
+        *,
+        plan_id: str,
+        taker_address: Optional[str] = None,
+        buy_asset: Optional[str] = None,
+        borrower_address: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """FREE $0-upfront pre-execution builder returning 0x v2 / Jupiter / Aave v3 calldata with 10% fee embedded inside the operation."""
+        body: Dict[str, Any] = {"planId": plan_id}
+        if taker_address:
+            body["takerAddress"] = taker_address
+        if buy_asset:
+            body["buyAsset"] = buy_asset
+        if borrower_address:
+            body["borrowerAddress"] = borrower_address
+        return self._request("POST", "/api/v1/prepare-execution", json_body=body)
+
+    def claim_dossier(
+        self,
+        *,
+        plan_id: str,
+        tx_hash: str,
+        chain: Optional[str] = None,
+        fee_tx_hash: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Verify on-chain operation fee receipt by txHash and unlock SpecID lots + Form 8949 / DeCripto CSV dossier."""
+        body: Dict[str, Any] = {"planId": plan_id, "txHash": tx_hash}
+        if chain:
+            body["chain"] = chain
+        if fee_tx_hash:
+            body["feeTxHash"] = fee_tx_hash
+        return self._request("POST", "/api/v1/claim-dossier", json_body=body)
 
     def tlh_scan(
         self,

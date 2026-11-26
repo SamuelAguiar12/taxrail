@@ -3,8 +3,12 @@ import type {
   BorrowVsSellPreview,
   CheckTaxImpactInput,
   CheckTaxImpactRedactedResponse,
+  ClaimDossierInput,
+  ClaimDossierResponse,
   DeductibleExpenseInput,
   DeductibleExpensePreview,
+  PrepareExecutionInput,
+  PrepareExecutionResponse,
 } from "@taxrail/shared";
 import type { z } from "zod";
 import {
@@ -81,6 +85,8 @@ export function createTaxRailActions(
     toAgentKitAction(client, TAXRAIL_TOOL_SPECS[1]),
     toAgentKitAction(client, TAXRAIL_TOOL_SPECS[2]),
     toAgentKitAction(client, TAXRAIL_TOOL_SPECS[3]),
+    toAgentKitAction(client, TAXRAIL_TOOL_SPECS[4]),
+    toAgentKitAction(client, TAXRAIL_TOOL_SPECS[5]),
   ];
 }
 
@@ -136,6 +142,14 @@ export class TaxRailActionProvider {
     input: DeductibleExpenseInput
   ): Promise<DeductibleExpensePreview> {
     return this.client.classifyDeductibleExpense(input);
+  }
+
+  prepareExecution(input: PrepareExecutionInput): Promise<PrepareExecutionResponse> {
+    return this.client.prepareExecution(input);
+  }
+
+  claimDossier(input: ClaimDossierInput): Promise<ClaimDossierResponse> {
+    return this.client.claimDossier(input);
   }
 
   unlockTaxPlan(input: UnlockTaxPlanActionInput): Promise<UnlockPlanResult> {

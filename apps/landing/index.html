@@ -210,15 +210,16 @@
     </header>
 
     <section class="hero">
-      <div class="badge">MCP × x402 v2 · Coinbase CDP &amp; PayAI · Base USDC (eip155:8453) · US + Brazil</div>
-      <h1>The <span class="gradient-text">Autonomous Tax Rail</span> for AI Agents</h1>
+      <div class="badge">$0 UPFRONT · 1-CLICK EXECUTION · 10% PAID FROM SAVINGS · US + BRAZIL</div>
+      <h1>Cut Crypto Taxes in <span class="gradient-text">1 Click — $0 Upfront</span></h1>
       <p>
-        Pre-execution crypto &amp; corporate tax optimization across the <strong>United States</strong> (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) and <strong>Brazil</strong> (Lei 14.754, R$35k rule, Lucro Real, IBS/CBS). Scan up to <strong>25 volatile tokens</strong> for $0.01 USDC, optimize in 1 call for $0.10, or simulate free and pay <strong>10% only on verified tax savings</strong>.
+        Simulate IRS <strong>1099-DA / Form 8949</strong> (HIFO, SpecID, TLH) and Brazil <strong>Lei 14.754 / DeCripto</strong> (R$35k rule, Lucro Real) free. Execute swaps (<code>0x v2</code>) or liquidity borrows (<code>Aave v3</code>) in <strong>1 click for $0 upfront</strong> — TaxRail collects <strong>10% only from your verified savings inside the operation</strong> and unlocks your audit-ready CSV immediately.
       </p>
 
       <div style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap; margin-bottom:22px;">
-        <a href="#free-calculator" class="btn btn-primary" style="text-decoration:none;">Calculate My 2026 Tax Savings Free ↓</a>
-        <a href="#free-calculator" class="btn" style="text-decoration:none;" onclick="switchCalcTab('manual'); runManualTradeCalc();">Try Instant HIFO Savings Demo →</a>
+        <a href="#free-calculator" class="btn btn-primary" style="text-decoration:none;">Scan &amp; Save on 2026 Taxes Free ↓</a>
+        <a href="#free-calculator" class="btn" style="text-decoration:none;" onclick="switchCalcTab('manual'); runManualTradeCalc();">Try 1-Click HIFO Demo →</a>
+        <a href="#free-calculator" class="btn" style="text-decoration:none;" onclick="switchCalcTab('borrow'); runBorrowVsSellCalc();">Borrow Without Selling (0% Tax) →</a>
       </div>
 
       <div class="copy-grid">
@@ -261,9 +262,9 @@
     </section>
 
     <section class="calc-panel" id="free-calculator">
-      <div class="badge" style="margin-bottom:10px;">FREE 2026 YEAR-END TAX SAVER · NO SIGNUP REQUIRED</div>
-      <h2 class="section-title">Calculate How Much Tax You Leak Before Swapping</h2>
-      <p class="section-sub" style="margin-bottom:16px;">Simulates live on-chain Base/Ethereum/Arbitrum lots &amp; IRS 1099-DA / Brazil Lei 14.754 rules via <code>api.taxrail.online</code>. Pay 10% only if you choose to unlock execution calldata &amp; dossier.</p>
+      <div class="badge" style="margin-bottom:10px;">$0 UPFRONT · 1-CLICK SWAP &amp; AAVE V3 EXECUTION · FREE 2026 TAX SAVER</div>
+      <h2 class="section-title">Simulate Free &amp; Execute in 1 Click (Pay 10% Only From Savings)</h2>
+      <p class="section-sub" style="margin-bottom:16px;">Simulates live on-chain Ethereum/Base/Arbitrum lots &amp; IRS 1099-DA / Brazil Lei 14.754 / DeCripto rules via <code>api.taxrail.online</code>. Execute with <strong>$0 out of pocket</strong> — TaxRail takes 10% of verified savings directly inside the swap or Aave borrow and unlocks your Form 8949 / DeCripto CSV.</p>
 
       <div class="calc-tabs">
         <button class="calc-tab active" data-tab="wallet" onclick="switchCalcTab('wallet')">1. Wallet Tax &amp; HIFO Scanner</button>
@@ -291,6 +292,16 @@
             <input id="cw-asset" type="text" value="ETH" />
           </div>
           <div class="field">
+            <label for="cw-buy">Receive / Rotate To</label>
+            <select id="cw-buy">
+              <option value="USDC" selected>USDC (Take Profit / Stable)</option>
+              <option value="WSTETH">wstETH (TLH Rotate · Keep ETH)</option>
+              <option value="CBETH">cbETH (TLH Rotate · Coinbase ETH)</option>
+              <option value="USDT">USDT</option>
+              <option value="CBBTC">cbBTC</option>
+            </select>
+          </div>
+          <div class="field">
             <label for="cw-qty">Sell Quantity</label>
             <input id="cw-qty" type="number" step="0.01" min="0.001" value="1" />
           </div>
@@ -314,6 +325,15 @@
           <div class="field">
             <label for="mt-asset">Asset</label>
             <input id="mt-asset" type="text" value="ETH" />
+          </div>
+          <div class="field">
+            <label for="mt-buy">Rotate To</label>
+            <select id="mt-buy">
+              <option value="USDC" selected>USDC</option>
+              <option value="WSTETH">wstETH (TLH Rotate)</option>
+              <option value="CBETH">cbETH (TLH Rotate)</option>
+              <option value="USDT">USDT</option>
+            </select>
           </div>
           <div class="field">
             <label for="mt-qty">Sell Qty</label>
@@ -378,6 +398,14 @@
             <input id="bv-asset" type="text" value="ETH" />
           </div>
           <div class="field">
+            <label for="bv-chain">Aave v3 Chain</label>
+            <select id="bv-chain">
+              <option value="base" selected>Base</option>
+              <option value="ethereum">Ethereum</option>
+              <option value="arbitrum">Arbitrum</option>
+            </select>
+          </div>
+          <div class="field">
             <label for="bv-amt">Collateral Qty</label>
             <input id="bv-amt" type="number" step="0.1" min="0.01" value="4" />
           </div>
@@ -415,12 +443,13 @@
       <p class="calc-note" id="calc-summary">Select any calculator tab above and click simulate to see instant deterministic tax savings.</p>
       <div class="calc-unlock-bar" id="calc-unlock-bar" style="display:none;">
         <div>
-          <span class="copy-label">Ready to Execute? Unlock SpecID Lots, Calldata &amp; Dossier</span>
+          <span class="copy-label">Ready to Execute? $0 Upfront (10% Paid Inside Operation) · Instant CSV Dossier</span>
           <span class="copy-val" id="calc-unlock-cmd">-</span>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-          <button class="btn btn-primary" id="calc-wallet-unlock-btn" style="display:none;" onclick="unlockActivePlanWithWallet()">Connect Wallet &amp; Unlock (0 Gas)</button>
-          <button class="btn" id="calc-unlock-copy" onclick="copyText(document.getElementById('calc-unlock-cmd').textContent, this)">Copy Unlock Command</button>
+          <button class="btn btn-primary" id="calc-oneclick-btn" style="display:none;" onclick="executeActivePlanOneClick()">Execute in 1 Click ($0 Upfront)</button>
+          <button class="btn" id="calc-wallet-unlock-btn" style="display:none;" onclick="unlockActivePlanWithWallet()">Dossier-Only (x402 USDC)</button>
+          <button class="btn" id="calc-unlock-copy" onclick="copyText(document.getElementById('calc-unlock-cmd').textContent, this)">Copy API Cmd</button>
         </div>
       </div>
       <div id="calc-unlocked-panel" style="display:none; margin-top:14px; background:#070b12; border:1px solid rgba(16,185,129,0.45); border-radius:12px; padding:16px;">
@@ -504,9 +533,14 @@
           <p>Classifies cloud, AI APIs, SaaS, and contractor invoices for US Schedule C / C-Corp (21%–37%) and Brazil Lucro Real (34% + PIS/COFINS + IBS/CBS).</p>
         </div>
         <div class="card">
+          <span class="tag free">$0 UPFRONT · prepare_execution &amp; claim_dossier</span>
+          <h3>1-Click Execution (10% Paid From Savings)</h3>
+          <p>Returns live <code>0x v2</code> swap calldata (up to 1000 bps) or <code>Aave v3</code> atomic borrow batch with 10% fee embedded inside the operation. Verify on-chain by <code>txHash</code> to unlock Form 8949 / DeCripto CSVs.</p>
+        </div>
+        <div class="card">
           <span class="tag">10% x402 · unlock_tax_plan</span>
-          <h3>Pay Only on Verified Savings</h3>
-          <p>Unlocks exact lot IDs, unsigned 0x / Aave v3 calldata, and Form 8949 / Omie-SPED accounting dossiers for 10% of verified tax saved. <strong>$0 fee if $0 saved.</strong></p>
+          <h3>Dossier-Only x402 Fallback</h3>
+          <p>Unlocks exact lot IDs, calldata, and Form 8949 / QuickBooks / Omie-SPED accounting dossiers via Base USDC for corporate expenses or x402-only agents. <strong>$0 fee if $0 saved.</strong></p>
         </div>
       </div>
     </section>
@@ -553,11 +587,24 @@
 
     <section class="section">
       <div class="card" style="border-color: rgba(16,185,129,0.35);">
-        <span class="tag free">AFFILIATE REVSHARE · 20%</span>
-        <h3>Earn 20% of TaxRail Fees Automatically</h3>
-        <p>
-          Building an AI agent in Coinbase AgentKit, LangChain, ElizaOS, or n8n? Install <code>npm install taxrail-agent-tools</code> or pass <code>referrerWallet: "0xYourWallet"</code> on any call to earn <strong>20% of TaxRail's fee</strong> split natively in swap calldata and fee accounting.
+        <span class="tag free">AFFILIATE REVSHARE · 20% ON-CHAIN</span>
+        <h3>Earn 20% of TaxRail Fees Automatically (Humans &amp; AI Agents)</h3>
+        <p style="margin-bottom:14px;">
+          Share your custom 1-click link below with traders, DAOs, or crypto CPAs — or pass <code>referrerWallet</code> in <code>npm install taxrail-agent-tools</code> / <code>pip install taxrail</code>. You automatically receive <strong>20% of TaxRail's 10% savings fee</strong> directly on-chain inside every swap or Aave v3 borrow!
         </p>
+        <div class="calc-grid" style="margin-bottom:10px;">
+          <div class="field" style="grid-column: span 2;">
+            <label for="aff-wallet">Your EVM / Base Payout Wallet (0x...)</label>
+            <input id="aff-wallet" type="text" placeholder="0xYourWalletAddress" oninput="updateAffiliateLink()" />
+          </div>
+          <div class="field" style="grid-column: span 2;">
+            <label for="aff-link-out">Your 20% On-Chain Referral Link</label>
+            <div style="display:flex; gap:8px;">
+              <input id="aff-link-out" type="text" readonly value="https://taxrail.online/?ref=0xYourWalletAddress" />
+              <button class="btn btn-primary" onclick="copyText(document.getElementById('aff-link-out').value, this)">Copy Link</button>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -734,6 +781,27 @@
     window.__activeTaxRailPlan = null;
     window.__unlockedTaxRailPlan = null;
 
+    function getActiveReferrerWallet() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const ref = (params.get("ref") || params.get("referrer") || "").trim();
+        if (/^0x[a-fA-F0-9]{40}$/.test(ref)) {
+          return ref;
+        }
+      } catch {}
+      return undefined;
+    }
+
+    function updateAffiliateLink() {
+      const input = document.getElementById("aff-wallet");
+      const out = document.getElementById("aff-link-out");
+      if (!input || !out) return;
+      const val = input.value.trim();
+      out.value = /^0x[a-fA-F0-9]{40}$/.test(val)
+        ? `https://taxrail.online/?ref=${val}`
+        : "https://taxrail.online/?ref=0xYourWalletAddress";
+    }
+
     function switchCalcTab(tab) {
       ["wallet", "manual", "br35k", "borrow"].forEach((id) => {
         document.getElementById(`tab-${id}`).style.display = id === tab ? "block" : "none";
@@ -751,18 +819,31 @@
       }
       document.getElementById("calc-summary").textContent = summary;
       const bar = document.getElementById("calc-unlock-bar");
+      const oneClickBtn = document.getElementById("calc-oneclick-btn");
       const walletBtn = document.getElementById("calc-wallet-unlock-btn");
       document.getElementById("calc-unlocked-panel").style.display = "none";
       window.__activeTaxRailPlan = planMeta && planMeta.planId ? planMeta : null;
 
       if (window.__activeTaxRailPlan) {
-        const fee = Number(window.__activeTaxRailPlan.upfrontX402Usd ?? 0);
+        const opFee = Number(window.__activeTaxRailPlan.operationFeeUsd ?? 0);
+        const x402Fee = Number(window.__activeTaxRailPlan.upfrontX402Usd ?? 0);
+        const actionWord =
+          window.__activeTaxRailPlan.planType === "BORROW_VS_SELL"
+            ? "Borrow USDC on Aave"
+            : `Execute Swap (${window.__activeTaxRailPlan.buyAsset || "USDC"})`;
+        oneClickBtn.textContent =
+          opFee <= 0
+            ? `1-Click ${actionWord} ($0.00 Fee)`
+            : `1-Click ${actionWord} ($0 Upfront · $${opFee.toFixed(2)} From Savings)`;
+        oneClickBtn.style.display = "inline-block";
+
         walletBtn.textContent =
-          fee <= 0
+          x402Fee <= 0
             ? "Unlock Free Dossier ($0.00)"
-            : `Connect Wallet & Unlock ($${fee.toFixed(2)} USDC · 0 Gas)`;
+            : `Dossier-Only ($${x402Fee.toFixed(2)} x402)`;
         walletBtn.style.display = "inline-block";
       } else {
+        oneClickBtn.style.display = "none";
         walletBtn.style.display = "none";
       }
 
@@ -774,7 +855,7 @@
       }
     }
 
-    function renderUnlockedDossier(plan, txHash) {
+    function renderUnlockedDossier(plan, txHash, customExplorerUrl) {
       window.__unlockedTaxRailPlan = plan;
       window.__unlockedSettlementTx = txHash || null;
       const panel = document.getElementById("calc-unlocked-panel");
@@ -790,10 +871,10 @@
       if (txHash && /^0x[a-fA-F0-9]{64}$/.test(txHash)) {
         meta.appendChild(document.createTextNode(" · "));
         const proof = document.createElement("a");
-        proof.href = `https://basescan.org/tx/${txHash}`;
+        proof.href = customExplorerUrl || `https://basescan.org/tx/${txHash}`;
         proof.target = "_blank";
         proof.rel = "noopener noreferrer";
-        proof.textContent = "BaseScan Settlement ↗";
+        proof.textContent = "On-Chain Settlement Proof ↗";
         meta.appendChild(proof);
         revBox.style.display = "block";
         revStatus.textContent = "";
@@ -895,24 +976,254 @@
       }
     }
 
-    async function ensureBaseNetwork(eth) {
+    const CHAIN_PARAMS = {
+      base: {
+        chainId: "0x2105",
+        chainName: "Base",
+        nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+        rpcUrls: ["https://mainnet.base.org"],
+        blockExplorerUrls: ["https://basescan.org"],
+      },
+      ethereum: {
+        chainId: "0x1",
+        chainName: "Ethereum Mainnet",
+        nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+        rpcUrls: ["https://eth.llamarpc.com"],
+        blockExplorerUrls: ["https://etherscan.io"],
+      },
+      arbitrum: {
+        chainId: "0xa4b1",
+        chainName: "Arbitrum One",
+        nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+        rpcUrls: ["https://arb1.arbitrum.io/rpc"],
+        blockExplorerUrls: ["https://arbiscan.io"],
+      },
+    };
+
+    async function ensureEvmChain(eth, chain) {
+      const target = CHAIN_PARAMS[chain] || CHAIN_PARAMS.base;
       try {
-        await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x2105" }] });
+        await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: target.chainId }] });
       } catch (err) {
         if (err && err.code === 4902) {
-          await eth.request({
-            method: "wallet_addEthereumChain",
-            params: [{
-              chainId: "0x2105",
-              chainName: "Base",
-              nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-              rpcUrls: ["https://mainnet.base.org"],
-              blockExplorerUrls: ["https://basescan.org"]
-            }]
-          });
+          await eth.request({ method: "wallet_addEthereumChain", params: [target] });
         } else {
           throw err;
         }
+      }
+    }
+
+    async function ensureBaseNetwork(eth) {
+      return ensureEvmChain(eth, "base");
+    }
+
+    function toHexValue(raw) {
+      if (raw === undefined || raw === null || raw === "" || raw === "0") return "0x0";
+      if (typeof raw === "string" && raw.startsWith("0x")) return raw;
+      try {
+        return "0x" + BigInt(String(raw)).toString(16);
+      } catch {
+        return "0x0";
+      }
+    }
+
+    function encodeErc20ApproveMax(spender) {
+      const cleanSpender = spender.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+      const maxUint256 = "f".repeat(64);
+      return "0x095ea7b3" + cleanSpender + maxUint256;
+    }
+
+    async function waitForTxReceipt(eth, txHash, maxAttempts = 60) {
+      for (let i = 0; i < maxAttempts; i++) {
+        const receipt = await eth.request({
+          method: "eth_getTransactionReceipt",
+          params: [txHash],
+        });
+        if (receipt) {
+          if (receipt.status === "0x0") {
+            throw new Error(`Transaction reverted on-chain (${txHash})`);
+          }
+          return receipt;
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      throw new Error(`Timed out waiting for transaction confirmation (${txHash})`);
+    }
+
+    async function executeActivePlanOneClick() {
+      const meta = window.__activeTaxRailPlan;
+      const summary = document.getElementById("calc-summary");
+      const btn = document.getElementById("calc-oneclick-btn");
+      if (!meta || !meta.planId) return;
+
+      const eth = window.ethereum;
+      if (!eth || typeof eth.request !== "function") {
+        summary.textContent = "No Web3 wallet detected in this browser. Install MetaMask, Rabby, or Coinbase Wallet — or use the API command below for AI agents.";
+        return;
+      }
+
+      const prevLabel = btn.textContent;
+      btn.disabled = true;
+
+      try {
+        btn.textContent = "Connecting wallet...";
+        const accounts = await eth.request({ method: "eth_requestAccounts" });
+        const fromAddress = accounts && accounts[0];
+        if (!fromAddress) {
+          summary.textContent = "Wallet connection cancelled.";
+          return;
+        }
+
+        const chain = meta.chain || "base";
+        await ensureEvmChain(eth, chain);
+
+        btn.textContent = "Preparing 0-upfront execution...";
+        const prepRes = await fetch(`${API_BASE}/api/v1/prepare-execution`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            planId: meta.planId,
+            takerAddress: fromAddress,
+            borrowerAddress: fromAddress,
+            ...(meta.buyAsset ? { buyAsset: meta.buyAsset } : {}),
+          }),
+        });
+        const prep = await prepRes.json();
+        if (!prepRes.ok) {
+          summary.textContent = `Execution prep error (${prepRes.status}): ${prep.error || "Please re-run simulation."}`;
+          return;
+        }
+
+        let settlementTxHash = null;
+        let feeTxHash = null;
+
+        if (prep.executionPayload?.type === "SWAP_0X_V2") {
+          const quote = prep.executionPayload.swapIntent?.liveQuote;
+          if (!quote || !quote.transaction) {
+            summary.textContent = "Live 0x quote unavailable for this pair/amount. Try Dossier-Only x402 unlock or check token liquidity.";
+            return;
+          }
+
+          const spender = quote.allowanceTarget || (quote.issues && quote.issues.allowance && quote.issues.allowance.spender);
+          if (spender && quote.sellTokenAddress && quote.sellTokenAddress.toLowerCase() !== "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") {
+            btn.textContent = "Approving token allowance (1/2)...";
+            const approveTx = await eth.request({
+              method: "eth_sendTransaction",
+              params: [{
+                from: fromAddress,
+                to: quote.sellTokenAddress,
+                data: encodeErc20ApproveMax(spender),
+                value: "0x0",
+              }],
+            });
+            summary.textContent = `Approval submitted (${approveTx}). Waiting for confirmation...`;
+            await waitForTxReceipt(eth, approveTx);
+          }
+
+          btn.textContent = "Confirm swap in wallet...";
+          const tx = quote.transaction;
+          settlementTxHash = await eth.request({
+            method: "eth_sendTransaction",
+            params: [{
+              from: fromAddress,
+              to: tx.to,
+              data: tx.data,
+              value: toHexValue(tx.value),
+              ...(tx.gas ? { gas: toHexValue(tx.gas) } : {}),
+            }],
+          });
+          btn.textContent = "Confirming swap on-chain...";
+          summary.textContent = `Swap submitted (${settlementTxHash}). Waiting for confirmation to unlock your CSV dossier...`;
+          await waitForTxReceipt(eth, settlementTxHash);
+        } else if (prep.executionPayload?.type === "AAVE_V3_BORROW_BATCH") {
+          const calls = prep.executionPayload.aaveActions?.atomicBatchCalls || [];
+          if (calls.length === 0) {
+            summary.textContent = "No Aave v3 calls generated for this plan.";
+            return;
+          }
+
+          let batched = false;
+          try {
+            btn.textContent = "Confirm 1-click atomic Aave batch...";
+            const batchResult = await eth.request({
+              method: "wallet_sendCalls",
+              params: [{
+                version: "1.0",
+                chainId: (CHAIN_PARAMS[chain] || CHAIN_PARAMS.base).chainId,
+                from: fromAddress,
+                calls: calls.map((c) => ({ to: c.to, data: c.data, value: "0x0" })),
+              }],
+            });
+            const callId = typeof batchResult === "string" ? batchResult : batchResult?.id;
+            if (callId) {
+              btn.textContent = "Waiting for atomic batch...";
+              for (let i = 0; i < 60; i++) {
+                const st = await eth.request({ method: "wallet_getCallsStatus", params: [callId] });
+                const receiptHash = st?.receipts?.[0]?.transactionHash;
+                if (st?.status === "CONFIRMED" || receiptHash) {
+                  settlementTxHash = receiptHash;
+                  batched = true;
+                  break;
+                }
+                await new Promise((r) => setTimeout(r, 2000));
+              }
+            }
+          } catch {
+            batched = false;
+          }
+
+          if (!batched) {
+            for (let idx = 0; idx < calls.length; idx++) {
+              const call = calls[idx];
+              btn.textContent = `Step ${idx + 1}/${calls.length}: ${call.description.slice(0, 26)}...`;
+              const txHash = await eth.request({
+                method: "eth_sendTransaction",
+                params: [{
+                  from: fromAddress,
+                  to: call.to,
+                  data: call.data,
+                  value: "0x0",
+                }],
+              });
+              summary.textContent = `Step ${idx + 1}/${calls.length} submitted (${txHash}). Confirming...`;
+              await waitForTxReceipt(eth, txHash);
+              settlementTxHash = txHash;
+              if (call.description.toLowerCase().includes("taxrail fee")) {
+                feeTxHash = txHash;
+              }
+            }
+          }
+        }
+
+        if (!settlementTxHash) {
+          summary.textContent = "Transaction hash unavailable after execution.";
+          return;
+        }
+
+        btn.textContent = "Verifying on-chain & unlocking CSV...";
+        const claimRes = await fetch(`${API_BASE}/api/v1/claim-dossier`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            planId: meta.planId,
+            txHash: settlementTxHash,
+            chain,
+            ...(feeTxHash ? { feeTxHash } : {}),
+          }),
+        });
+        const claimJson = await claimRes.json();
+        if (!claimRes.ok) {
+          summary.textContent = `Dossier verification pending (${claimRes.status}): ${claimJson.error || "Retry claim in a few seconds."}`;
+          return;
+        }
+
+        renderUnlockedDossier(claimJson.plan, claimJson.settlementTx, claimJson.explorerUrl);
+        summary.textContent = `Executed in 1 click ($0 upfront)! TaxRail verified $${Number(claimJson.feePaidUsd ?? 0).toFixed(2)} from the operation and unlocked your CSV dossier below.`;
+      } catch (err) {
+        summary.textContent = `1-click execution stopped: ${err && err.message ? err.message : String(err)}`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prevLabel;
       }
     }
 
@@ -1053,8 +1364,10 @@
       const addr = document.getElementById("cw-addr").value.trim();
       const chain = document.getElementById("cw-chain").value;
       const asset = document.getElementById("cw-asset").value.trim().toUpperCase() || "ETH";
+      const buyAsset = document.getElementById("cw-buy").value || "USDC";
       const qty = Number(document.getElementById("cw-qty").value || 1);
       const jur = document.getElementById("cw-jur").value;
+      const ref = getActiveReferrerWallet();
       const summary = document.getElementById("calc-summary");
       summary.textContent = "Scanning on-chain wallet lots on " + chain + "...";
       document.getElementById("calc-unlock-bar").style.display = "none";
@@ -1067,9 +1380,11 @@
             walletAddress: addr,
             chain,
             targetAsset: asset,
+            targetQuoteAsset: buyAsset,
             sellQuantity: qty,
             jurisdiction: jur,
             regime: jur === "BR" ? "PF_LEI_14754" : "INDIVIDUAL",
+            ...(ref ? { referrerWallet: ref } : {}),
           }),
         });
         const data = await res.json();
@@ -1078,21 +1393,25 @@
           return;
         }
         const unlockCmd = data.planId
-          ? `curl -X POST ${API_BASE}/api/v1/unlock-plan -H "Content-Type: application/json" -d '{"planId":"${data.planId}"}'`
+          ? `curl -X POST ${API_BASE}/api/v1/prepare-execution -H "Content-Type: application/json" -d '{"planId":"${data.planId}","takerAddress":"${addr}","buyAsset":"${buyAsset}"}'`
           : null;
         setCalcResult(
-          ["Naive FIFO Tax", "TaxRail HIFO Tax", "Verified Saved", "Unlock Fee (x402)"],
+          ["Naive FIFO Tax", "TaxRail HIFO Tax", "Verified Saved", "10% Fee ($0 Upfront)"],
           [
             `$${Number(data.baselineTaxUsd ?? 0).toFixed(2)}`,
             `$${Number(data.optimizedTaxUsd ?? 0).toFixed(2)}`,
             `$${Number(data.taxSavedUsd ?? 0).toFixed(2)}`,
-            `$${Number(data.pricing?.upfrontX402Usd ?? 0).toFixed(2)}`,
+            `$${Number(data.pricing?.operationFeeUsd ?? 0).toFixed(2)}`,
           ],
           data.agentGuidance || "Simulation complete.",
           unlockCmd,
           data.planId
             ? {
                 planId: data.planId,
+                planType: "CRYPTO_DISPOSAL",
+                chain,
+                buyAsset,
+                operationFeeUsd: Number(data.pricing?.operationFeeUsd ?? 0),
                 upfrontX402Usd: Number(data.pricing?.upfrontX402Usd ?? 0),
                 taxSavedUsd: Number(data.taxSavedUsd ?? 0),
               }
@@ -1105,11 +1424,13 @@
 
     async function runManualTradeCalc() {
       const asset = document.getElementById("mt-asset").value.trim().toUpperCase() || "ETH";
+      const buyAsset = document.getElementById("mt-buy").value || "USDC";
       const qty = Math.max(0.0001, Number(document.getElementById("mt-qty").value || 2));
       const spot = Math.max(0.01, Number(document.getElementById("mt-spot").value || 3200));
       const early = Math.max(0, Number(document.getElementById("mt-early").value || 1100));
       const recent = Math.max(0, Number(document.getElementById("mt-recent").value || 2950));
       const jur = document.getElementById("mt-jur").value;
+      const ref = getActiveReferrerWallet();
       const summary = document.getElementById("calc-summary");
       summary.textContent = `Simulating HIFO vs. FIFO tax impact for ${qty} ${asset}...`;
       document.getElementById("calc-unlock-bar").style.display = "none";
@@ -1125,8 +1446,9 @@
             targetAsset: asset,
             sellQuantity: qty,
             currentPriceUsd: spot,
-            targetQuoteAsset: "USDC",
+            targetQuoteAsset: buyAsset,
             asOfDate: "2026-11-26T00:00:00Z",
+            ...(ref ? { referrerWallet: ref } : {}),
             lots: [
               {
                 lotId: "fifo-early",
@@ -1153,21 +1475,25 @@
           return;
         }
         const unlockCmd = data.planId
-          ? `curl -X POST ${API_BASE}/api/v1/unlock-plan -H "Content-Type: application/json" -d '{"planId":"${data.planId}"}'`
+          ? `curl -X POST ${API_BASE}/api/v1/prepare-execution -H "Content-Type: application/json" -d '{"planId":"${data.planId}","buyAsset":"${buyAsset}"}'`
           : null;
         setCalcResult(
-          ["Naive FIFO Tax", "TaxRail HIFO Tax", "Verified Saved", "Unlock Fee (10%)"],
+          ["Naive FIFO Tax", "TaxRail HIFO Tax", "Verified Saved", "10% Fee ($0 Upfront)"],
           [
             `$${Number(data.baselineTaxUsd ?? 0).toFixed(2)}`,
             `$${Number(data.optimizedTaxUsd ?? 0).toFixed(2)}`,
             `$${Number(data.taxSavedUsd ?? 0).toFixed(2)}`,
-            `$${Number(data.pricing?.upfrontX402Usd ?? 0).toFixed(2)}`,
+            `$${Number(data.pricing?.operationFeeUsd ?? 0).toFixed(2)}`,
           ],
           data.agentGuidance || "Manual HIFO simulation complete.",
           unlockCmd,
           data.planId
             ? {
                 planId: data.planId,
+                planType: "CRYPTO_DISPOSAL",
+                chain: "base",
+                buyAsset,
+                operationFeeUsd: Number(data.pricing?.operationFeeUsd ?? 0),
                 upfrontX402Usd: Number(data.pricing?.upfrontX402Usd ?? 0),
                 taxSavedUsd: Number(data.taxSavedUsd ?? 0),
               }
@@ -1208,11 +1534,13 @@
 
     async function runBorrowVsSellCalc() {
       const asset = document.getElementById("bv-asset").value.trim().toUpperCase() || "ETH";
+      const chain = document.getElementById("bv-chain").value || "base";
       const amt = Number(document.getElementById("bv-amt").value || 4);
       const price = Number(document.getElementById("bv-price").value || 3200);
       const basis = Number(document.getElementById("bv-basis").value || 900);
       const need = Number(document.getElementById("bv-need").value || 5000);
       const jur = document.getElementById("bv-jur").value;
+      const ref = getActiveReferrerWallet();
       const summary = document.getElementById("calc-summary");
       summary.textContent = "Comparing capital gains tax vs. Aave v3 borrow cost...";
 
@@ -1223,32 +1551,36 @@
           body: JSON.stringify({
             jurisdiction: jur,
             regime: jur === "BR" ? "PF_LEI_14754" : "INDIVIDUAL",
-            chain: "base",
+            chain,
             collateralAsset: asset,
             collateralAmount: amt,
             collateralPriceUsd: price,
             collateralCostBasisUsd: basis,
             holdingDays: 180,
             liquidityNeededUsd: need,
+            ...(ref ? { referrerWallet: ref } : {}),
           }),
         });
         const data = await res.json();
         const cmd = data.planId
-          ? `curl -X POST ${API_BASE}/api/v1/unlock-plan -H "Content-Type: application/json" -d '{"planId":"${data.planId}"}'`
+          ? `curl -X POST ${API_BASE}/api/v1/prepare-execution -H "Content-Type: application/json" -d '{"planId":"${data.planId}"}'`
           : null;
         setCalcResult(
-          ["Sell Tax Cost", "Aave Net Borrow Cost", "Tax Saved", "Projected LTV"],
+          ["Sell Tax Cost", "Aave Net Borrow Cost", "Tax Saved", "10% Fee ($0 Upfront)"],
           [
             `$${Number(data.sellTaxCostUsd ?? 0).toFixed(2)}`,
             `$${Number(data.netBorrowCostUsd ?? 0).toFixed(2)}`,
             `$${Number(data.taxSavedUsd ?? 0).toFixed(2)}`,
-            `${Number(data.projectedLtvPct ?? 0).toFixed(1)}%`,
+            `$${Number(data.pricing?.operationFeeUsd ?? 0).toFixed(2)}`,
           ],
-          `Recommendation: ${data.recommendation} — ${data.agentGuidance || ""}`,
+          `Recommendation: ${data.recommendation} (LTV ${Number(data.projectedLtvPct ?? 0).toFixed(1)}%) — ${data.agentGuidance || ""}`,
           cmd,
           data.planId
             ? {
                 planId: data.planId,
+                planType: "BORROW_VS_SELL",
+                chain,
+                operationFeeUsd: Number(data.pricing?.operationFeeUsd ?? 0),
                 upfrontX402Usd: Number(data.pricing?.upfrontX402Usd ?? 0),
                 taxSavedUsd: Number(data.taxSavedUsd ?? 0),
               }
@@ -1256,6 +1588,15 @@
         );
       } catch (err) {
         summary.textContent = `Request failed: ${err}`;
+      }
+    }
+
+    const activeRef = getActiveReferrerWallet();
+    if (activeRef) {
+      const affIn = document.getElementById("aff-wallet");
+      if (affIn) {
+        affIn.value = activeRef;
+        updateAffiliateLink();
       }
     }
 

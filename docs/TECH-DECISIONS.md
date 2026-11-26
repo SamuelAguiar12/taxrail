@@ -26,23 +26,22 @@ Este documento registra os *trade-offs* arquiteturais da **TaxRail**, comparando
 
 ---
 
-## 2. Precificação Dinâmica `MCP × x402` (10% da Economia) vs Taxa Fixa / SaaS
+## 2. Precificação Orientada a Resultado: 10% Pagos Pela Própria Operação ($0 Upfront) + Fallback `x402`
 
 ### Escolha Adotada
-Modelo em **2 etapas**: descoberta gratuita (`check_tax_impact`, `compare_borrow_vs_sell`, `classify_deductible_expense`) seguida de desbloqueio (`unlock_tax_plan`) cobrando **10% da economia tributária verificada (`taxSavedUsd`)**, liquidado via **x402 (Base USDC `eip155:8453`)** com guardrail híbrido (`upfrontX402Usd` com teto de US$ 50 + `embeddedSwapFeeBps` de 0 a 100 bps + `enterpriseBalanceUsd`) e **20% de affiliate share** (`referrerWallet`).
+Modelo **1-Clique com $0 Upfront**: descoberta gratuita (`check_tax_impact`, `compare_borrow_vs_sell`, `classify_deductible_expense`) seguida de `POST /api/v1/prepare-execution` (gratuito), onde **exatamente 10% da economia tributária verificada (`taxSavedUsd`)** é cobrado **diretamente do resultado da própria operação** — via `0x v2` / `Jupiter` (`embeddedSwapFeeBps` / `embeddedSwapFeePpm` até `1000 bps` = 10%, com split nativo multi-recipient 80/20) ou via `Aave v3` (`totalBorrowAmountUsd = liquidityNeededUsd + 10% fee` em `atomicBatchCalls`). Após a confirmação on-chain, `POST /api/v1/claim-dossier` verifica o `txHash` via RPC e libera os lotes SpecID e o CSV (`IRS Form 8949` / `BR Lei 14.754 / DeCripto`). O fluxo `x402` (`/api/v1/unlock-plan`) permanece ativo como fallback para despesas corporativas off-chain (`classify_deductible_expense`) e agentes nativos x402.
 
 ### Comparativo Técnico
 
-| Critério | `MCP × x402` Dinâmico (10% da economia) | Taxa Fixa por Chamada (ex.: US$ 0,10/call) | Assinatura SaaS Mensal (Cartão/Stripe) |
+| Critério | $0 Upfront (10% na Operação) | `x402` Antecipado Obrigatório | Assinatura SaaS Mensal |
 | :--- | :--- | :--- | :--- |
-| **Alinhamento de Valor** | Cliente só paga quando há economia comprovada (`ROI > 1x`) | Cobra igual se economizou US$ 0 ou US$ 5.000 | Cobra mesmo sem uso |
-| **Fricção para Agentes de IA** | Zero cadastro/cartão: agente paga via HTTP 402 com USDC na Base | Exige recarga prévia ou micro-cobrança constante | Inviável para agentes autônomos sem humano no checkout |
-| **Ticket Médio / Upside** | Escala linearmente com o tamanho da operação (até o teto de bps) | Margem comprimida em operações grandes | Teto de ARPU previsível, porém difícil de vender para bots |
-| **Complexidade de Implementação** | Exige proteção contra manipulação de `taxSavedUsd` e cap on-chain | Trivial | Exige billing portal, faturas e chargebacks |
+| **Atrito de Checkout** | **Zero:** humano ou agente paga na rede em que já está, sem saldo prévio em Base USDC | Exige USDC na Base antes da operação | Exige cartão e cadastro |
+| **Garantia de 10% da Economia** | `0x v2` (até 1000 bps), `Jupiter` (até 100%) e `Aave v3` (borrow + transfer) cobrem 100% da taxa | Guardrail de US$ 50 exigia cobrança Enterprise no excedente | Teto fixo de ARPU |
+| **Anti-Bypass** | Dossiê SpecID / Form 8949 / DeCripto só é liberado após verificação on-chain do recebimento da taxa | Libera após assinatura EIP-3009 x402 | Sem vínculo com a execução on-chain |
 
 ### Prós e Contras na Prática
-- **Prós:** Um agente não precisa pedir cartão de crédito corporativo ao fundador para testar o serviço. Ele simula grátis, vê que vai economizar US$ 800 de imposto usando HIFO/Aave em vez de FIFO, paga US$ 10 upfront via x402 e embute o restante no *calldata* do swap. Além disso, o split automático de 20% transforma desenvolvedores de *plugins* (AgentKit, LangChain, n8n) em canal de distribuição remunerado.
-- **Contras:** A dependência do ecossistema x402 ainda está em maturação. Para reduzir atrito caso um protocolo ou tesouraria ainda não assine x402 nativamente, o modelo prevê `enterpriseBalanceUsd` para faturamento recorrente B2B.
+- **Prós:** Um trader nos EUA (1099-DA / TLH até 31/12) ou no Brasil (DeCripto / Lei 14.754) ou um agente de IA executa a operação em 1 clique pagando **US$ 0 do próprio bolso antecipadamente**. Como a `0x v2` na Ethereum/Base/Arbitrum permite até `1000 bps` (10%) sem reter corte de protocolo (ao contrário do `CoW Swap`, que limitava em 100 bps e retinha 25%), roteamos todo EVM pela `0x v2` e garantimos exatamente 10% da economia.
+- **Contras:** Requer verificação on-chain (`eth_getTransactionReceipt`) no endpoint `/api/v1/claim-dossier` para confirmar a entrega da taxa à tesouraria antes de liberar o CSV auditável. Mitigamos isso usando Alchemy RPC com fallback público em < 500 ms.
 
 ---
 

@@ -22,24 +22,60 @@ const ZEROX_TOKEN_ADDRESSES: Record<
     ETH: { address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", decimals: 18 },
     WETH: { address: "0x4200000000000000000000000000000000000006", decimals: 18 },
     USDC: { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6 },
+    USDT: { address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", decimals: 6 },
     WBTC: { address: "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c", decimals: 8 },
     CBBTC: { address: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf", decimals: 8 },
+    WSTETH: { address: "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452", decimals: 18 },
+    CBETH: { address: "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22", decimals: 18 },
   },
   ethereum: {
     ETH: { address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", decimals: 18 },
     WETH: { address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", decimals: 18 },
     USDC: { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
+    USDT: { address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6 },
     WBTC: { address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", decimals: 8 },
     CBBTC: { address: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf", decimals: 8 },
+    WSTETH: { address: "0x7f39C581F595B53c5cb19bD0b3F8dA6c935E2Ca0", decimals: 18 },
+    CBETH: { address: "0xBe9895146f7AF43049ca1c1AE358B0541Ea49704", decimals: 18 },
   },
   arbitrum: {
     ETH: { address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", decimals: 18 },
     WETH: { address: "0x82aF49447d8a07e3bd95BD0d56f35241523fBab1", decimals: 18 },
     USDC: { address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6 },
+    USDT: { address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", decimals: 6 },
     WBTC: { address: "0x2f2a2543B76A4166549F7aAb2E75BeF0aEFC5B0f", decimals: 8 },
     CBBTC: { address: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf", decimals: 8 },
+    WSTETH: { address: "0x5979D7b546E38E414F7E9822514be443A4800529", decimals: 18 },
   },
 };
+
+const PUBLIC_EVM_RPC_HOSTS: Record<EvmChain, string> = {
+  base: "https://mainnet.base.org",
+  ethereum: "https://eth.llamarpc.com",
+  arbitrum: "https://arb1.arbitrum.io/rpc",
+};
+
+const EVM_EXPLORER_TX_BASE: Record<EvmChain, string> = {
+  base: "https://basescan.org/tx/",
+  ethereum: "https://etherscan.io/tx/",
+  arbitrum: "https://arbiscan.io/tx/",
+};
+
+const ERC20_TRANSFER_TOPIC =
+  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+export function resolveZeroXTokenInfo(
+  chain: SupportedChain,
+  asset: string
+): { address: string; decimals: number } | null {
+  if (!isEvmChain(chain)) return null;
+  return ZEROX_TOKEN_ADDRESSES[chain][asset.trim().toUpperCase()] ?? null;
+}
+
+export function getExplorerTxUrl(chain: SupportedChain, txHash: string): string {
+  const base = isEvmChain(chain) ? EVM_EXPLORER_TX_BASE[chain] : EVM_EXPLORER_TX_BASE.base;
+  return `${base}${txHash}`;
+}
 
 function normalizeSymbol(asset: string): string {
   const upper = asset.trim().toUpperCase();
@@ -548,7 +584,8 @@ export async function fetchBatchSpotPricesUsd(
 }
 
 /**
- * Fetches a live Swap API v2 price/quote from 0x with TaxRail's dynamic integrator fee attached.
+ * Fetches a live Swap API v2 price/quote from 0x with TaxRail's dynamic integrator fee attached
+ * (up to 1000 bps / 10%, with optional 80/20 comma-separated multi-recipient affiliate split).
  */
 export async function fetchLive0xQuote(params: {
   chain: SupportedChain;
@@ -558,6 +595,7 @@ export async function fetchLive0xQuote(params: {
   takerAddress?: string;
   swapFeeBps: number;
   swapFeeRecipient: string;
+  affiliateWallet?: string;
   zeroxApiKey?: string;
 }): Promise<{ quote?: Record<string, unknown>; note?: string }> {
   if (!params.zeroxApiKey) {
@@ -566,6 +604,7 @@ export async function fetchLive0xQuote(params: {
   if (!isEvmChain(params.chain)) {
     return { note: `0x Swap API v2 applies to EVM chains; skipped for ${params.chain}.` };
   }
+  const evmChain: EvmChain = params.chain;
 
   const tokens = ZEROX_TOKEN_ADDRESSES[params.chain];
   const sellToken = tokens[params.sellAsset.trim().toUpperCase()];
@@ -587,43 +626,79 @@ export async function fetchLive0xQuote(params: {
     ? "https://api.0x.org/swap/allowance-holder/quote"
     : "https://api.0x.org/swap/allowance-holder/price";
 
-  const query = new URLSearchParams({
-    chainId: String(CHAIN_IDS[params.chain]),
-    sellToken: sellToken.address,
-    buyToken: buyToken.address,
-    sellAmount,
-  });
+  const clampedFeeBps = Math.min(1000, Math.max(0, Math.round(params.swapFeeBps)));
+  const trimmedAff = params.affiliateWallet?.trim();
+  const canSplitAffiliate =
+    Boolean(trimmedAff) &&
+    /^0x[a-fA-F0-9]{40}$/.test(trimmedAff!) &&
+    trimmedAff!.toLowerCase() !== params.swapFeeRecipient.toLowerCase() &&
+    clampedFeeBps >= 2;
 
-  if (hasTaker && params.takerAddress) {
-    query.set("taker", params.takerAddress);
-  }
-  if (params.swapFeeBps > 0) {
-    query.set("swapFeeBps", String(Math.min(100, Math.round(params.swapFeeBps))));
-    query.set("swapFeeRecipient", params.swapFeeRecipient);
-    query.set("swapFeeToken", buyToken.address);
-  }
+  const buildQuoteUrl = (useMultiRecipientSplit: boolean): string => {
+    const query = new URLSearchParams({
+      chainId: String(CHAIN_IDS[evmChain]),
+      sellToken: sellToken.address,
+      buyToken: buyToken.address,
+      sellAmount,
+    });
+    if (hasTaker && params.takerAddress) {
+      query.set("taker", params.takerAddress);
+    }
+    if (clampedFeeBps > 0) {
+      if (useMultiRecipientSplit && trimmedAff) {
+        const affiliateBps = Math.max(1, Math.round(clampedFeeBps * 0.2));
+        const treasuryBps = Math.max(1, clampedFeeBps - affiliateBps);
+        query.set("swapFeeBps", `${treasuryBps},${affiliateBps}`);
+        query.set("swapFeeRecipient", `${params.swapFeeRecipient},${trimmedAff}`);
+      } else {
+        query.set("swapFeeBps", String(clampedFeeBps));
+        query.set("swapFeeRecipient", params.swapFeeRecipient);
+      }
+      query.set("swapFeeToken", buyToken.address);
+    }
+    return `${endpoint}?${query.toString()}`;
+  };
 
   try {
-    const res = await fetch(`${endpoint}?${query.toString()}`, {
-      headers: {
-        "0x-api-key": params.zeroxApiKey,
-        "0x-version": "v2",
-        Accept: "application/json",
-      },
-    });
-    const body = (await res.json()) as Record<string, unknown>;
+    const headers = {
+      "0x-api-key": params.zeroxApiKey,
+      "0x-version": "v2",
+      Accept: "application/json",
+    };
+
+    let usedMultiRecipient = canSplitAffiliate;
+    let res = await fetch(buildQuoteUrl(usedMultiRecipient), { headers });
+    let body = (await res.json()) as Record<string, unknown>;
+
+    if (!res.ok && usedMultiRecipient) {
+      usedMultiRecipient = false;
+      res = await fetch(buildQuoteUrl(false), { headers });
+      body = (await res.json()) as Record<string, unknown>;
+    }
+
     if (!res.ok) {
       return {
         note: `0x API returned HTTP ${res.status}: ${String(body.message ?? body.reason ?? "quote unavailable")}`,
       };
     }
+    const issuesObj =
+      body.issues && typeof body.issues === "object"
+        ? (body.issues as { allowance?: { spender?: string } | null })
+        : undefined;
     return {
       quote: {
         endpoint: hasTaker ? "quote" : "price",
         chainId: CHAIN_IDS[params.chain],
+        sellTokenAddress: sellToken.address,
+        sellTokenDecimals: sellToken.decimals,
+        buyTokenAddress: buyToken.address,
+        buyTokenDecimals: buyToken.decimals,
         buyAmount: body.buyAmount,
         minBuyAmount: body.minBuyAmount,
         liquidityAvailable: body.liquidityAvailable,
+        fees: body.fees,
+        multiRecipientSplitApplied: usedMultiRecipient,
+        allowanceTarget: issuesObj?.allowance?.spender ?? null,
         transaction: body.transaction,
         issues: body.issues,
       },
@@ -633,4 +708,139 @@ export async function fetchLive0xQuote(params: {
       note: err instanceof Error ? `0x live quote failed: ${err.message}` : "0x live quote failed.",
     };
   }
+}
+
+/**
+ * Verifies on-chain via `eth_getTransactionReceipt` that a settled swap or Aave borrow batch
+ * succeeded (`status === 0x1`) and delivered the expected fee token transfer to `treasuryWallet`.
+ */
+export async function verifyOperationFeeReceipt(params: {
+  chain: EvmChain;
+  txHash: string;
+  treasuryWallet: string;
+  expectedTokenAddress?: string;
+  expectedMinAtomic?: bigint;
+  alchemyApiKey?: string;
+}): Promise<
+  | { verified: true; receivedAtomic: string; explorerUrl: string }
+  | { verified: false; reason: string; explorerUrl: string }
+> {
+  const explorerUrl = getExplorerTxUrl(params.chain, params.txHash);
+  const rpcUrl = params.alchemyApiKey
+    ? `${ALCHEMY_RPC_HOSTS[params.chain]}/${params.alchemyApiKey}`
+    : PUBLIC_EVM_RPC_HOSTS[params.chain];
+
+  interface RpcReceipt {
+    status?: string;
+    logs?: Array<{
+      address?: string;
+      topics?: string[];
+      data?: string;
+    }>;
+  }
+
+  let receipt: RpcReceipt | null = null;
+
+  try {
+    const rpcRes = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_getTransactionReceipt",
+        params: [params.txHash],
+      }),
+    });
+    if (!rpcRes.ok) {
+      return {
+        verified: false,
+        reason: `RPC HTTP ${rpcRes.status} fetching transaction receipt on ${params.chain}.`,
+        explorerUrl,
+      };
+    }
+    const json = (await rpcRes.json()) as {
+      result?: RpcReceipt | null;
+      error?: { message?: string };
+    };
+    if (json.error) {
+      return {
+        verified: false,
+        reason: `RPC error: ${json.error.message ?? "unknown error"}`,
+        explorerUrl,
+      };
+    }
+    receipt = json.result ?? null;
+  } catch (err) {
+    return {
+      verified: false,
+      reason: err instanceof Error ? err.message : "Failed to query on-chain receipt.",
+      explorerUrl,
+    };
+  }
+
+  if (!receipt) {
+    return {
+      verified: false,
+      reason: `Transaction ${params.txHash} is not yet mined on ${params.chain}. Wait a few seconds and retry.`,
+      explorerUrl,
+    };
+  }
+
+  if (receipt.status !== "0x1") {
+    return {
+      verified: false,
+      reason: `Transaction ${params.txHash} reverted on ${params.chain} (status=${receipt.status ?? "unknown"}).`,
+      explorerUrl,
+    };
+  }
+
+  const treasuryClean = params.treasuryWallet.trim().toLowerCase().replace(/^0x/, "");
+  const expectedTokenLower = params.expectedTokenAddress?.trim().toLowerCase();
+  const filterByToken =
+    Boolean(expectedTokenLower) &&
+    expectedTokenLower !== "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
+  let receivedAtomic = 0n;
+  for (const log of receipt.logs ?? []) {
+    const topics = log.topics ?? [];
+    if (
+      topics.length >= 3 &&
+      topics[0]?.toLowerCase() === ERC20_TRANSFER_TOPIC &&
+      topics[2]?.toLowerCase().endsWith(treasuryClean)
+    ) {
+      if (filterByToken && log.address?.toLowerCase() !== expectedTokenLower) {
+        continue;
+      }
+      try {
+        if (log.data && /^0x[0-9a-fA-F]+$/.test(log.data)) {
+          receivedAtomic += BigInt(log.data);
+        }
+      } catch {
+        // Ignore malformed log data
+      }
+    }
+  }
+
+  if (receivedAtomic <= 0n) {
+    return {
+      verified: false,
+      reason: `No fee transfer to TaxRail treasury (${params.treasuryWallet}) found in transaction ${params.txHash}.`,
+      explorerUrl,
+    };
+  }
+
+  if (params.expectedMinAtomic && params.expectedMinAtomic > 0n && receivedAtomic < params.expectedMinAtomic) {
+    return {
+      verified: false,
+      reason: `Fee transfer in ${params.txHash} (${receivedAtomic.toString()} atomic) is below required minimum (${params.expectedMinAtomic.toString()} atomic).`,
+      explorerUrl,
+    };
+  }
+
+  return {
+    verified: true,
+    receivedAtomic: receivedAtomic.toString(),
+    explorerUrl,
+  };
 }

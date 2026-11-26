@@ -1,8 +1,8 @@
 {
   "name": "taxrail-agent-tools",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
-  "description": "Coinbase AgentKit ActionProvider, LangChain structured tools, x402 client, pre-trade guardrail, Brazil R$35k check & $0.01 TLH wallet scanner for TaxRail (20% referrerWallet revshare)",
+  "description": "Coinbase AgentKit ActionProvider, LangChain structured tools, $0-upfront 1-click execution (10% fee paid from operation), x402 client & TLH wallet scanner for TaxRail (20% referrerWallet revshare)",
   "license": "MIT",
   "homepage": "https://api.taxrail.online",
   "repository": {

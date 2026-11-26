@@ -41,11 +41,11 @@
     <p>Under 2025–2026 IRS wallet-by-wallet reporting rules (Form 1099-DA &amp; Form 8949), brokers and custodians default to FIFO (First-In, First-Out) unless a trader or software agent explicitly records Specific Identification (SpecID) / HIFO lot selection <strong>before</strong> settlement. For an autonomous DeFi or treasury agent holding early low-basis ETH alongside recent higher-basis lots, naive FIFO routinely triggers 15%–37% unnecessary tax leakage.</p>
 
     <div class="card">
-      <h2>3-Step Pre-Trade Tax Guardrail for AI Agents</h2>
+      <h2>$0-Upfront 1-Click Execution + 3-Step Pre-Trade Tax Guardrail</h2>
       <ol>
-        <li><strong>$0.01 Pre-Trade Guardrail:</strong> Call <code>GET https://api.taxrail.online/api/v1/x402/pre-trade-check?walletAddress=0x...&amp;sellAsset=ETH&amp;sellAmount=1&amp;chain=base</code> via x402 Base USDC. TaxRail scans on-chain lots, flags imminent 366-day Short-Term → Long-Term tax cliffs, and tests whether borrowing USDC on Aave v3 beats selling appreciated tokens.</li>
         <li><strong>Free Simulation Preview:</strong> Call <code>POST https://api.taxrail.online/api/v1/check-tax-impact</code> (or MCP tool <code>check_tax_impact</code>) to get deterministic <code>baselineTaxUsd</code>, <code>optimizedTaxUsd</code>, <code>taxSavedUsd</code>, and an unlockable <code>planId</code>.</li>
-        <li><strong>$0.01 Multi-Token Wallet TLH Scan:</strong> Before December 31, run <code>GET https://api.taxrail.online/api/v1/x402/tlh-scan?walletAddress=0x...&amp;chain=base&amp;asset=ALL</code> to harvest unrealized losses across up to 25 tokens in one call.</li>
+        <li><strong>1-Click $0-Upfront Execution (Pay 10% From Operation):</strong> Call <code>POST https://api.taxrail.online/api/v1/prepare-execution</code> (<code>$0</code> upfront) to get ready-to-sign <code>0x v2</code> swap calldata (including TLH rotations like <code>ETH → wstETH</code>) or <code>Aave v3</code> atomic borrow batch with TaxRail's exact 10% verified-savings fee embedded inside the operation. Broadcast the tx, then call <code>POST https://api.taxrail.online/api/v1/claim-dossier</code> with the <code>txHash</code> to unlock SpecID lots &amp; IRS Form 8949 CSVs.</li>
+        <li><strong>$0.01 Guardrails &amp; TLH Scans:</strong> Call <code>GET /api/v1/x402/pre-trade-check</code> or <code>GET /api/v1/x402/tlh-scan?walletAddress=0x...&amp;chain=base&amp;asset=ALL</code> before December 31 to harvest unrealized losses across up to 25 tokens in one call.</li>
       </ol>
     </div>
 

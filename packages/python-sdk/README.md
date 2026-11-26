@@ -39,7 +39,16 @@ preview = client.check_tax_impact(
 )
 print(preview["taxSavedUsd"], preview["planId"])
 
-# 2. Paid x402 micro-endpoints ($0.01 pre-trade check, $0.005 BR R$35k check, $0.01 TLH scan)
+# 2. $0-upfront 1-click execution (exact 10% fee paid from the swap or Aave borrow itself)
+prep = client.prepare_execution(
+    plan_id=preview["planId"],
+    taker_address="0xYourWallet",
+    buy_asset="wstETH",
+)
+# Sign & broadcast prep["executionPayload"], then claim Form 8949 / DeCripto CSV:
+# dossier = client.claim_dossier(plan_id=preview["planId"], tx_hash="0x...", chain="base")
+
+# 3. Paid x402 micro-endpoints ($0.01 pre-trade check, $0.005 BR R$35k check, $0.01 TLH scan)
 try:
     status = client.br_35k_status(
         monthly_sales_brl=20000,

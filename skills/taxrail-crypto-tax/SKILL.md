@@ -1,7 +1,7 @@
 ---
 name: taxrail-crypto-tax
-version: 0.1.0
-description: Pre-execution US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) & Brazil (Lei 14.754, R$35k rule, Lucro Real) crypto tax optimization, $0.01 wallet TLH & pre-trade check, $0.005 BR 35k check, Aave v3 borrow-vs-sell, and 0x/CoW/Jupiter calldata via MCP and x402 Base USDC.
+version: 0.3.0
+description: $0-upfront 1-click US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) & Brazil (Lei 14.754, DeCripto, R$35k rule, Lucro Real) crypto tax optimization paying 10% savings fee directly from the operation (0x v2 / Jupiter / Aave v3), plus x402 Base USDC micro-checks via MCP.
 author: SamuelAguiar12
 homepage: https://api.taxrail.online
 tags: [crypto-tax, defi, x402, base, usdc, irs-1099-da, tax-loss-harvesting, brazil-lei-14754, aave-v3, wallet-scanner]
@@ -25,9 +25,11 @@ Use TaxRail **before** executing any crypto swap, rebalancing a portfolio, selli
    Call `POST https://api.taxrail.online/api/v1/check-tax-impact` (or MCP tool `check_tax_impact`) with either explicit `lots` or `walletAddress`. Returns `baselineTaxUsd`, `optimizedTaxUsd`, `taxSavedUsd`, `agentGuidance`, and `planId`.
 5. **Liquidity Without Selling (FREE Step 1):**
    Call `POST https://api.taxrail.online/api/v1/borrow-vs-sell` (or MCP `compare_borrow_vs_sell`) to test if borrowing USDC on Aave v3 beats selling appreciated crypto after taxes.
-6. **Full 1-Step Execution + Accounting Dossier ($0.10 USDC):**
-   Call `POST https://api.taxrail.online/api/v1/x402/optimize` via x402 Base USDC to receive exact SpecID/HIFO lots, unsigned `0x v2` / `CoW Swap` / `Jupiter` calldata, and Form 8949 / Lei 14.754 CSV exports in one request.
-7. **Unlock Any Step-1 `planId` (Dynamic 10% Success Fee, $0 if $0 saved):**
+6. **1-Click $0-Upfront Execution (Pay 10% From Operation Proceeds):**
+   Call `POST https://api.taxrail.online/api/v1/prepare-execution` (or MCP `prepare_execution`) with `{ "planId": "...", "takerAddress": "0x...", "buyAsset": "wstETH" }` for **$0 upfront**. Broadcast the returned `0x v2` swap or `Aave v3` atomic borrow batch (which collects TaxRail's exact 10% savings fee from the operation), then call `POST https://api.taxrail.online/api/v1/claim-dossier` (or MCP `claim_dossier`) with `{ "planId": "...", "txHash": "0x..." }` to unlock SpecID lots & Form 8949 / DeCripto CSV.
+7. **Full 1-Step Execution + Accounting Dossier ($0.10 USDC):**
+   Call `POST https://api.taxrail.online/api/v1/x402/optimize` via x402 Base USDC to receive exact SpecID/HIFO lots, unsigned `0x v2` / `Jupiter` calldata, and Form 8949 / Lei 14.754 CSV exports in one request.
+8. **Unlock Any Step-1 `planId` Dossier-Only Fallback (Dynamic 10% Success Fee, $0 if $0 saved):**
    Call `POST https://api.taxrail.online/api/v1/unlock-plan` (or MCP `unlock_tax_plan`) with `{ "planId": "..." }`.
 
 ## Earn 20% Automatic Affiliate Revenue Share

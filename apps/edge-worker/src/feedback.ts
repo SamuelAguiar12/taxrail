@@ -26,6 +26,7 @@ export const FeedbackInputSchema = z.object({
 
 export type FeedbackInput = z.infer<typeof FeedbackInputSchema>;
 export type PaymentTier =
+  | "10PCT_OPERATION_FEE"
   | "10PCT_UNLOCK"
   | "QUICK_OPTIMIZE"
   | "TLH_SCAN"
@@ -38,6 +39,7 @@ export interface PaidReceiptRecord {
   amountUsd: number;
   taxSavedUsd?: number;
   planId?: string;
+  explorerUrl?: string;
   createdAt: string;
 }
 
@@ -128,6 +130,7 @@ export async function recordPaidReceipt(
     amountUsd: number;
     taxSavedUsd?: number;
     planId?: string;
+    explorerUrl?: string;
   }
 ): Promise<void> {
   const tx = params.settlementTx?.trim();
@@ -141,6 +144,7 @@ export async function recordPaidReceipt(
     amountUsd: params.amountUsd,
     ...(params.taxSavedUsd !== undefined ? { taxSavedUsd: params.taxSavedUsd } : {}),
     ...(params.planId ? { planId: params.planId } : {}),
+    ...(params.explorerUrl ? { explorerUrl: params.explorerUrl } : {}),
     createdAt: new Date().toISOString(),
   };
 
@@ -246,6 +250,7 @@ export async function submitFeedback(params: {
   const { sanitized, safeForPublic } = sanitizeFeedbackComment(input.comment);
 
   let verifiedTx: string | undefined;
+  let verifiedExplorerUrl: string | undefined;
   let paymentTier: PaymentTier | undefined;
   let verifiedTaxSavedUsd: number | undefined;
   let resolvedPlanId = input.planId;
@@ -254,6 +259,7 @@ export async function submitFeedback(params: {
     const receipt = await getPaidReceipt(env, input.settlementTx);
     if (receipt) {
       verifiedTx = receipt.txHash;
+      verifiedExplorerUrl = receipt.explorerUrl;
       paymentTier = receipt.tier;
       verifiedTaxSavedUsd = receipt.taxSavedUsd;
       if (!resolvedPlanId && receipt.planId) {
@@ -266,7 +272,10 @@ export async function submitFeedback(params: {
     const storedPlan = await planStore.get(input.planId);
     if (storedPlan?.unlocked && storedPlan.settlementTx && TX_HASH_REGEX.test(storedPlan.settlementTx)) {
       verifiedTx = storedPlan.settlementTx.toLowerCase();
-      paymentTier = "10PCT_UNLOCK";
+      paymentTier =
+        storedPlan.pricing.settlementMode === "PAY_FROM_OPERATION"
+          ? "10PCT_OPERATION_FEE"
+          : "10PCT_UNLOCK";
       verifiedTaxSavedUsd = storedPlan.pricing.taxSavedUsd;
     }
   }
@@ -291,7 +300,7 @@ export async function submitFeedback(params: {
     ...(verifiedTx
       ? {
           settlementTx: verifiedTx,
-          baseScanUrl: `https://basescan.org/tx/${verifiedTx}`,
+          baseScanUrl: verifiedExplorerUrl || `https://basescan.org/tx/${verifiedTx}`,
         }
       : {}),
     verifiedPaid,

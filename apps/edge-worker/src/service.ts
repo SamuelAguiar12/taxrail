@@ -15,10 +15,14 @@ import type {
   CheckTaxImpactInput,
   CheckTaxImpactRedactedResponse,
   CheckTaxImpactRequest,
+  ClaimDossierInput,
+  ClaimDossierResponse,
   DeductibleExpenseInput,
   DeductibleExpensePreview,
   FullTaxOptimizationPlan,
   Jurisdiction,
+  PrepareExecutionInput,
+  PrepareExecutionResponse,
   PreTradeCheckResult,
   SwapIntentPayload,
   TaxLot,
@@ -30,15 +34,24 @@ import {
   analyzeCryptoDisposal,
   analyzeDeductibleExpense,
 } from "@taxrail/tax-engine";
+import { EVM_TOKEN_REGISTRY } from "@taxrail/execution";
 import { DEFAULT_PAY_TO_ADDRESS, type Env } from "./env.js";
+import { recordPaidReceipt } from "./feedback.js";
 import {
   fetchLive0xQuote,
   fetchSpotPriceUsd,
   fetchWalletLotsFromAlchemy,
   fetchWalletPortfolioFromAlchemy,
+  getExplorerTxUrl,
+  resolveZeroXTokenInfo,
+  verifyOperationFeeReceipt,
   type PortfolioAssetLots,
 } from "./onchain.js";
-import { DEFAULT_PLAN_TTL_SECONDS, type PlanStore } from "./plan-store.js";
+import {
+  DEFAULT_PLAN_TTL_SECONDS,
+  type ExecutionVerificationMeta,
+  type PlanStore,
+} from "./plan-store.js";
 
 export interface TaxRailServiceDeps {
   planStore: PlanStore;
@@ -69,22 +82,36 @@ export function buildAgentUpsellGuidance(params: {
   planId: string;
   taxSavedUsd: number;
   upfrontX402Usd: number;
+  operationFeeUsd?: number;
   roiMultiple: number;
   planType: "CRYPTO_DISPOSAL" | "BORROW_VS_SELL" | "DEDUCTIBLE_EXPENSE";
 }): string {
-  const { planId, taxSavedUsd, upfrontX402Usd, roiMultiple, planType } = params;
+  const { planId, taxSavedUsd, upfrontX402Usd, operationFeeUsd = 0, roiMultiple, planType } = params;
   const deliverable =
     planType === "BORROW_VS_SELL"
-      ? "Aave v3 non-custodial supply/borrow calldata and accounting dossier"
+      ? "Aave v3 non-custodial supply/borrow batch and accounting dossier"
       : planType === "DEDUCTIBLE_EXPENSE"
         ? "audit-ready tax deduction dossier and compliance ledger export"
         : "exact SpecID/HIFO selected lot IDs, non-custodial swap calldata, and accounting dossier";
 
-  if (taxSavedUsd <= 0 || upfrontX402Usd <= 0) {
+  if (taxSavedUsd <= 0 || (upfrontX402Usd <= 0 && operationFeeUsd <= 0)) {
     return `RECOMMENDATION: Unlock ${deliverable} for $0.00 USDC (FREE — $0 tax-savings fee applies). Call POST /api/v1/unlock-plan or MCP tool unlock_tax_plan with {"planId":"${planId}"} immediately.`;
   }
 
-  const netBenefit = Math.max(0, taxSavedUsd - upfrontX402Usd);
+  const totalFee = operationFeeUsd > 0 ? operationFeeUsd : upfrontX402Usd;
+  const netBenefit = Math.max(0, taxSavedUsd - totalFee);
+  if (planType !== "DEDUCTIBLE_EXPENSE") {
+    return `HIGH-ROI ACTION ($0 UPFRONT): Executing unoptimized leaks $${taxSavedUsd.toFixed(
+      2
+    )} in avoidable tax. Pay 10% ($${totalFee.toFixed(
+      2
+    )}) directly from the operation (${roiMultiple.toFixed(1)}x ROI, $${netBenefit.toFixed(
+      2
+    )} net savings): call POST /api/v1/prepare-execution with {"planId":"${planId}"}, sign the 1-click tx, then call POST /api/v1/claim-dossier to unlock ${deliverable} — or unlock dossier-only via POST /api/v1/unlock-plan ($${upfrontX402Usd.toFixed(
+      2
+    )} x402 Base USDC).`;
+  }
+
   return `HIGH-ROI ACTION: Executing unoptimized leaks $${taxSavedUsd.toFixed(
     2
   )} in avoidable tax. Unlocking ${deliverable} costs $${upfrontX402Usd.toFixed(
@@ -178,6 +205,7 @@ async function prepareCryptoOptimizationPlan(
         takerAddress: input.walletAddress,
         swapFeeBps: swapIntent.integratorFeeBps,
         swapFeeRecipient: treasuryWallet,
+        affiliateWallet: analysis.pricing.affiliateWallet,
         zeroxApiKey: deps.env.ZEROX_API_KEY,
       });
       if (live0x.quote) {
@@ -264,6 +292,7 @@ export async function executeCheckTaxImpact(
       planId: redacted.planId,
       taxSavedUsd: redacted.taxSavedUsd,
       upfrontX402Usd: pricing.upfrontX402Usd,
+      operationFeeUsd: pricing.operationFeeUsd,
       roiMultiple: pricing.roiMultiple,
       planType: "CRYPTO_DISPOSAL",
     }),
@@ -304,6 +333,9 @@ export async function executeBorrowVsSell(
       collateralAsset: input.collateralAsset,
       collateralAmount: input.collateralAmount,
       borrowAmountUsd: input.liquidityNeededUsd,
+      feeAmountUsd: pricing.operationFeeUsd,
+      treasuryWallet: resolveTreasuryWallet(deps.env),
+      affiliateWallet: input.referrerWallet,
     });
   } catch (err) {
     executionNotes.push(
@@ -367,6 +399,7 @@ export async function executeBorrowVsSell(
       planId: preview.planId,
       taxSavedUsd: preview.taxSavedUsd,
       upfrontX402Usd: pricing.upfrontX402Usd,
+      operationFeeUsd: pricing.operationFeeUsd,
       roiMultiple: pricing.roiMultiple,
       planType: "BORROW_VS_SELL",
     }),
@@ -974,5 +1007,338 @@ export function executeBr35kStatus(params: {
     )}) to pay R$0 tax, and defer the rest until the 1st of next month.`,
     disclaimer:
       "Deterministic software calculation for Brazil crypto tax planning (Lei 14.754/2023 & IN RFB 1888), not legal or CPA advice.",
+  };
+}
+
+/**
+ * Prepares a $0-upfront 1-click execution payload (`0x v2`, `Jupiter`, or `Aave v3`) with
+ * TaxRail's exact 10% verified-savings fee embedded inside the operation itself.
+ * Strictly redacts `selectedLots`, `tlhOpportunities`, and `accountingDossier` until
+ * `claim_dossier` verifies the on-chain settlement receipt.
+ */
+export async function executePrepareExecution(
+  input: PrepareExecutionInput,
+  deps: TaxRailServiceDeps
+): Promise<
+  | { ok: true; data: PrepareExecutionResponse }
+  | { ok: false; status: 400 | 404; error: string }
+> {
+  const stored = await deps.planStore.get(input.planId);
+  if (!stored) {
+    return { ok: false, status: 404, error: "Plan not found or expired" };
+  }
+
+  const { plan, pricing } = stored;
+  if (plan.planType === "DEDUCTIBLE_EXPENSE") {
+    return {
+      ok: false,
+      status: 400,
+      error:
+        "DEDUCTIBLE_EXPENSE plans have no on-chain swap/borrow operation. Unlock via POST /api/v1/unlock-plan.",
+    };
+  }
+
+  const treasuryWallet = resolveTreasuryWallet(deps.env);
+  const remainingTtl = stored.expiresAt
+    ? Math.max(60, Math.ceil((Date.parse(stored.expiresAt) - Date.now()) / 1000))
+    : DEFAULT_PLAN_TTL_SECONDS;
+
+  if (plan.planType === "BORROW_VS_SELL") {
+    const existingAave = plan.aaveActions;
+    if (!existingAave) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Aave v3 actions are unavailable for this plan.",
+      };
+    }
+
+    const chain = existingAave.chain;
+    let aaveActions = existingAave;
+    const borrowerAddress = input.borrowerAddress || input.takerAddress;
+
+    if (borrowerAddress && (!existingAave.feeTransferTransaction || borrowerAddress !== input.borrowerAddress)) {
+      const rebuildFee = pricing.totalFeeUsd;
+      // Re-encode with the caller's live borrower address by extracting collateral/amounts from notes or existing payload
+      // Note: if the original plan already has valid actions, update onBehalfOf when borrowerAddress is passed
+      const colMatch = existingAave.supplyTransaction?.description.match(/Supply\s+([\d.]+)\s+(\S+)\s+collateral/);
+      const collateralAmount = colMatch ? Number(colMatch[1]) : 0;
+      const collateralAsset = colMatch ? colMatch[2]! : "ETH";
+
+      if (Number.isFinite(collateralAmount) && collateralAmount >= 0) {
+        aaveActions = buildAaveBorrowPayload({
+          chain,
+          borrowerAddress,
+          collateralAsset,
+          collateralAmount,
+          borrowAmountUsd: existingAave.netLiquidityUsd,
+          feeAmountUsd: rebuildFee,
+          treasuryWallet,
+          affiliateWallet: pricing.affiliateWallet,
+        });
+      }
+    }
+
+    const usdcMeta = EVM_TOKEN_REGISTRY[chain].USDC;
+    const treasuryFeeUsd = aaveActions.feeTransferTransaction?.amountUsd ?? 0;
+    const expectedTreasuryFeeAtomic =
+      treasuryFeeUsd > 0
+        ? BigInt(Math.floor(treasuryFeeUsd * 0.98 * 1_000_000)).toString()
+        : "0";
+
+    const executionVerification: ExecutionVerificationMeta = {
+      chain,
+      treasuryWallet,
+      expectedFeeTokenAddress: usdcMeta.address,
+      expectedTreasuryFeeAtomic,
+      expectedFeeUsd: pricing.totalFeeUsd,
+    };
+
+    const updatedPlan: FullTaxOptimizationPlan = {
+      ...plan,
+      aaveActions,
+    };
+
+    await deps.planStore.put(
+      plan.planId,
+      {
+        ...stored,
+        plan: updatedPlan,
+        executionVerification,
+      },
+      remainingTtl
+    );
+
+    return {
+      ok: true,
+      data: {
+        planId: plan.planId,
+        planType: "BORROW_VS_SELL",
+        chain,
+        settlementMode: pricing.totalFeeUsd > 0 ? "PAY_FROM_OPERATION" : "FREE",
+        upfrontCostUsd: 0,
+        feePaidFromOperationUsd: aaveActions.feePaidFromBorrowUsd,
+        feeRatePct: pricing.feeRatePct,
+        taxSavedUsd: plan.taxSavedUsd,
+        clientNetBenefitUsd: pricing.clientNetBenefitUsd,
+        roiMultiple: pricing.roiMultiple,
+        treasuryWallet,
+        ...(pricing.affiliateWallet ? { affiliateWallet: pricing.affiliateWallet } : {}),
+        affiliateShareUsd: pricing.affiliateShareUsd,
+        executionPayload: {
+          type: "AAVE_V3_BORROW_BATCH",
+          aaveActions,
+          expectedFeeTokenAddress: usdcMeta.address,
+          expectedTreasuryFeeAtomic,
+        },
+        nextAction: {
+          tool: "claim_dossier",
+          endpoint: "/api/v1/claim-dossier",
+          planId: plan.planId,
+          instruction:
+            "Execute `atomicBatchCalls` (via EIP-5792 wallet_sendCalls or sequentially), then call POST /api/v1/claim-dossier with { planId, txHash } (and feeTxHash if sequential) to unlock your IRS Form 8949 / DeCripto dossier.",
+        },
+        disclaimer: plan.disclaimer,
+      },
+    };
+  }
+
+  // CRYPTO_DISPOSAL swap preparation
+  const baseSwap = plan.swapIntent;
+  if (!baseSwap) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Swap intent is unavailable for this plan.",
+    };
+  }
+
+  const buyAsset = (input.buyAsset || baseSwap.buyAsset || "USDC").trim().toUpperCase();
+  const chain = baseSwap.chain;
+  const swapIntent = buildSwapIntent({
+    chain,
+    sellAsset: baseSwap.sellAsset,
+    buyAsset,
+    sellAmountDecimal: baseSwap.sellAmountDecimal,
+    pricing,
+    treasuryWallet,
+    takerAddress: input.takerAddress,
+  });
+
+  if (swapIntent.venue === "0x_v2" && deps.env.ZEROX_API_KEY && !deps.skipLive0xQuote) {
+    const live0x = await fetchLive0xQuote({
+      chain,
+      sellAsset: swapIntent.sellAsset,
+      buyAsset,
+      sellAmountDecimal: swapIntent.sellAmountDecimal,
+      takerAddress: input.takerAddress,
+      swapFeeBps: swapIntent.integratorFeeBps,
+      swapFeeRecipient: treasuryWallet,
+      affiliateWallet: pricing.affiliateWallet,
+      zeroxApiKey: deps.env.ZEROX_API_KEY,
+    });
+    if (live0x.quote) {
+      swapIntent.liveQuote = live0x.quote;
+    }
+  }
+
+  const buyTokenInfo = resolveZeroXTokenInfo(chain, buyAsset);
+  const isUsdStable = buyAsset === "USDC" || buyAsset === "USDT";
+  const treasuryRatio = pricing.affiliateWallet ? 0.8 : 1.0;
+  const expectedTreasuryUsd = pricing.operationFeeUsd * treasuryRatio;
+  const expectedTreasuryFeeAtomic =
+    isUsdStable && expectedTreasuryUsd > 0
+      ? BigInt(Math.floor(expectedTreasuryUsd * 0.85 * 1_000_000)).toString()
+      : "0";
+
+  const evmChain: "base" | "ethereum" | "arbitrum" =
+    chain === "ethereum" || chain === "arbitrum" ? chain : "base";
+
+  const executionVerification: ExecutionVerificationMeta = {
+    chain: evmChain,
+    treasuryWallet,
+    ...(buyTokenInfo ? { expectedFeeTokenAddress: buyTokenInfo.address } : {}),
+    expectedTreasuryFeeAtomic,
+    expectedFeeUsd: pricing.operationFeeUsd,
+  };
+
+  await deps.planStore.put(
+    plan.planId,
+    {
+      ...stored,
+      plan: { ...plan, swapIntent },
+      executionVerification,
+    },
+    remainingTtl
+  );
+
+  return {
+    ok: true,
+    data: {
+      planId: plan.planId,
+      planType: "CRYPTO_DISPOSAL",
+      chain,
+      settlementMode: pricing.totalFeeUsd > 0 ? "PAY_FROM_OPERATION" : "FREE",
+      upfrontCostUsd: 0,
+      feePaidFromOperationUsd: pricing.operationFeeUsd,
+      feeRatePct: pricing.feeRatePct,
+      taxSavedUsd: plan.taxSavedUsd,
+      clientNetBenefitUsd: pricing.clientNetBenefitUsd,
+      roiMultiple: pricing.roiMultiple,
+      treasuryWallet,
+      ...(pricing.affiliateWallet ? { affiliateWallet: pricing.affiliateWallet } : {}),
+      affiliateShareUsd: pricing.affiliateShareUsd,
+      executionPayload: {
+        type: swapIntent.venue === "jupiter" ? "SWAP_JUPITER" : "SWAP_0X_V2",
+        swapIntent,
+        ...(buyTokenInfo ? { expectedFeeTokenAddress: buyTokenInfo.address } : {}),
+        expectedTreasuryFeeAtomic,
+      },
+      nextAction: {
+        tool: "claim_dossier",
+        endpoint: "/api/v1/claim-dossier",
+        planId: plan.planId,
+        instruction:
+          "Sign and broadcast the swap transaction (`liveQuote.transaction` or `requestTemplate`), then call POST /api/v1/claim-dossier with { planId, txHash, chain } to verify the on-chain fee receipt and unlock your SpecID lots + accounting CSV.",
+      },
+      disclaimer: plan.disclaimer,
+    },
+  };
+}
+
+/**
+ * Verifies the on-chain operation fee receipt for a `planId` and unlocks the full
+ * SpecID Lot IDs + IRS Form 8949 / Brazil DeCripto accounting dossier.
+ */
+export async function executeClaimDossier(
+  input: ClaimDossierInput,
+  deps: TaxRailServiceDeps,
+  opts: { devBypass?: boolean } = {}
+): Promise<
+  | { ok: true; data: ClaimDossierResponse }
+  | { ok: false; status: 402 | 404; error: string; explorerUrl?: string }
+> {
+  const stored = await deps.planStore.get(input.planId);
+  if (!stored) {
+    return { ok: false, status: 404, error: "Plan not found or expired" };
+  }
+
+  const chain: "base" | "ethereum" | "arbitrum" =
+    input.chain ?? stored.executionVerification?.chain ?? "base";
+  const settlementTx = input.feeTxHash || input.txHash;
+  const explorerUrl = getExplorerTxUrl(chain, settlementTx);
+  const feePaidUsd =
+    stored.executionVerification?.expectedFeeUsd ??
+    (stored.pricing.operationFeeUsd > 0 ? stored.pricing.operationFeeUsd : stored.pricing.totalFeeUsd);
+
+  if (opts.devBypass || stored.pricing.totalFeeUsd <= 0 || feePaidUsd <= 0) {
+    const unlockedRecord = await deps.planStore.markUnlocked(input.planId, settlementTx);
+    if (feePaidUsd > 0) {
+      await recordPaidReceipt(deps.env, {
+        settlementTx,
+        tier: "10PCT_OPERATION_FEE",
+        amountUsd: feePaidUsd,
+        taxSavedUsd: stored.pricing.taxSavedUsd,
+        planId: input.planId,
+        explorerUrl,
+      });
+    }
+    return {
+      ok: true,
+      data: {
+        verified: true,
+        planId: input.planId,
+        settlementTx,
+        explorerUrl,
+        feePaidUsd: stored.pricing.totalFeeUsd <= 0 ? 0 : feePaidUsd,
+        plan: unlockedRecord ? unlockedRecord.plan : stored.plan,
+      },
+    };
+  }
+
+  const treasuryWallet =
+    stored.executionVerification?.treasuryWallet ?? resolveTreasuryWallet(deps.env);
+  const expectedMinAtomic = stored.executionVerification?.expectedTreasuryFeeAtomic
+    ? BigInt(stored.executionVerification.expectedTreasuryFeeAtomic)
+    : undefined;
+
+  const verification = await verifyOperationFeeReceipt({
+    chain,
+    txHash: settlementTx,
+    treasuryWallet,
+    expectedTokenAddress: stored.executionVerification?.expectedFeeTokenAddress,
+    expectedMinAtomic,
+    alchemyApiKey: deps.env.ALCHEMY_API_KEY,
+  });
+
+  if (!verification.verified) {
+    return {
+      ok: false,
+      status: 402,
+      error: verification.reason,
+      explorerUrl: verification.explorerUrl,
+    };
+  }
+
+  const unlockedRecord = await deps.planStore.markUnlocked(input.planId, settlementTx);
+  await recordPaidReceipt(deps.env, {
+    settlementTx,
+    tier: "10PCT_OPERATION_FEE",
+    amountUsd: feePaidUsd,
+    taxSavedUsd: stored.pricing.taxSavedUsd,
+    planId: input.planId,
+    explorerUrl: verification.explorerUrl,
+  });
+
+  return {
+    ok: true,
+    data: {
+      verified: true,
+      planId: input.planId,
+      settlementTx,
+      explorerUrl: verification.explorerUrl,
+      feePaidUsd,
+      plan: unlockedRecord ? unlockedRecord.plan : stored.plan,
+    },
   };
 }

@@ -3,9 +3,9 @@
 [![SamuelAguiar12/taxrail MCP server](https://glama.ai/mcp/servers/SamuelAguiar12/taxrail/badges/score.svg)](https://glama.ai/mcp/servers/SamuelAguiar12/taxrail)
 [![TaxRail MCP connector](https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail/badges/score.svg)](https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail)
 
-**The Autonomous Tax-Optimization Rail for AI Agents — US & Brazil**
+**The Autonomous $0-Upfront Tax-Optimization Rail for Humans & AI Agents — US & Brazil**
 
-TaxRail is a non-custodial, deterministic pre-execution tax & treasury optimization layer built for autonomous AI agents, wallets, and fintech workflows. Before an agent executes a swap, borrows liquidity, or pays a corporate vendor, TaxRail simulates the tax impact across US and Brazilian regimes, builds non-custodial execution payloads (`0x v2`, `CoW Swap`, `Jupiter`, `Aave v3`), and settles pay-per-savings fees natively via **MCP × x402** on Base (`eip155:8453` USDC) through **Coinbase CDP** (primary) and **PayAI** (automatic fallback).
+TaxRail is a non-custodial, deterministic pre-execution tax & treasury optimization layer built for traders, corporate treasuries, and autonomous AI agents. Before executing a swap, TLH rotation (`ETH → wstETH`), or liquidity borrow (`Aave v3`), TaxRail simulates the tax impact across US (`IRS 1099-DA`, `Form 8949`) and Brazilian (`Lei 14.754`, `DeCripto`, `R$ 35k`, `Lucro Real`) regimes, builds ready-to-sign 1-click execution payloads (`0x v2`, `Jupiter`, `Aave v3` atomic batch), and collects **exactly 10% of verified tax savings directly from the operation's proceeds ($0 upfront)** — with **x402 Base USDC** (`eip155:8453`) available as a dossier-only fallback via **Coinbase CDP** and **PayAI**.
 
 ---
 
@@ -14,7 +14,7 @@ TaxRail is a non-custodial, deterministic pre-execution tax & treasury optimizat
 - **Zero Blind Tax Drag:** Naive FIFO disposals and unoptimized liquidations routinely leak **15%–37%** in avoidable capital gains and indirect taxes. TaxRail sits directly in the pre-trade path.
 - **Deterministic Engine, Zero LLM Math:** All lot selection (FIFO vs. HIFO/SpecID), Tax-Loss Harvesting (TLH), Brazil Lei 14.754 / R$ 35k exemptions, and Lucro Real / Simples shields run in deterministic TypeScript—reproducible, auditable, and sub-5ms.
 - **Non-Custodial by Design:** TaxRail never holds user funds or private keys. It outputs unsigned swap intents and Aave v3 calldata for the agent or user wallet to sign.
-- **Agent-Native Monetization (`MCP × x402`):** Free discovery tools + 10% verified-savings unlock on Base USDC, with **20% automatic affiliate revenue share** for agent developers (`referrerWallet`).
+- **Agent & Human 1-Click Monetization ($0 Upfront):** Free discovery tools + exact **10% verified-savings fee paid directly from the swap output (`0x v2` / `Jupiter` up to 1000 bps) or `Aave v3` borrowed USDC**, with **20% automatic affiliate revenue share** (`referrerWallet`) and x402 fallback.
 
 ---
 
@@ -46,21 +46,21 @@ flowchart LR
 
 ---
 
-## 2-Step `MCP × x402` Pricing Model
+## $0-Upfront 1-Click Pricing Model (10% Paid From Operation)
 
-TaxRail aligns incentives with verifiable savings: **if an agent saves $0 in taxes, the plan costs $0.**
+TaxRail aligns incentives with verifiable savings: **if you save $0 in taxes, the plan costs $0. If you save taxes, you pay $0 out of pocket upfront — TaxRail collects exactly 10% of `taxSavedUsd` directly inside the operation.**
 
-| Step | Tools / Endpoints | Cost | What You Get |
-| :--- | :--- | :--- | :--- |
+| Step | Tools / Endpoints | Upfront Cost | What You Get |
+| :--- | :--- | :---: | :--- |
 | **Step 1: Free Discovery** | `check_tax_impact`<br>`compare_borrow_vs_sell`<br>`classify_deductible_expense` | **$0** | Baseline vs. optimized tax (`baselineTaxUsd`, `optimizedTaxUsd`, `taxSavedUsd`), `DynamicPricingQuote`, compliance warnings, and `planId`. |
-| **Step 2: Verified-Savings Unlock** | `unlock_tax_plan`<br>(`POST /api/v1/unlock-plan`) | **10% of `taxSavedUsd`** (default `feeRatePct: 0.10`, range `0.05–0.15` by tier) | Full `SelectedLotDisposal[]`, `TlhOpportunity[]`, unsigned `SwapIntentPayload` / `AaveActionPayload`, and `AccountingDossier` (`IRS_FORM_8949`, `QUICKBOOKS_EXPENSE`, `BR_LEI_14754`, `BR_LUCRO_REAL_OMIE_SPED`). |
+| **Step 2A: 1-Click Execution (Swaps & Aave v3)** | `prepare_execution`<br>(`POST /api/v1/prepare-execution`)<br>→ sign tx → `claim_dossier`<br>(`POST /api/v1/claim-dossier`) | **$0 upfront**<br>(10% of `taxSavedUsd` paid from swap output / Aave borrow) | Live `0x v2` / `Jupiter` swap calldata (up to `1000 bps` / 10%) or `Aave v3` `atomicBatchCalls` (borrowing `liquidity + 10% fee`), plus on-chain receipt verification unlocking full `SelectedLotDisposal[]`, `TlhOpportunity[]`, and `AccountingDossier` (`IRS_FORM_8949`, `BR_LEI_14754` / `DeCripto`). |
+| **Step 2B: Dossier-Only x402 Fallback** | `unlock_tax_plan`<br>(`POST /api/v1/unlock-plan`) | **10% of `taxSavedUsd`**<br>via Base USDC (`x402`) | Direct dossier unlock for non-onchain corporate expenses (`QUICKBOOKS_EXPENSE`, `BR_LUCRO_REAL_OMIE_SPED`) or agents preferring upfront Base USDC settlement. |
 
-### Hybrid Fee Split & Developer Affiliate Share
+### Native On-Chain Fee Mechanics & 20% Affiliate Share
 
-1. **Upfront x402 Cap (`upfrontX402Usd`):** Settled atomically in USDC on Base (`eip155:8453`) via HTTP `402 Payment Required`, capped with a **$50 guardrail** (e.g., `$10` upfront + remaining fee shifted to swap calldata).
-2. **Embedded Swap Fee (`embeddedSwapFeeBps`):** Remaining fee embedded as a transparent Partner/Integrator fee (`0–100 bps`) directly inside `SwapIntentPayload.feeRecipients`.
-3. **Enterprise Balance (`enterpriseBalanceUsd`):** Any excess fee beyond the swap cap is tracked for enterprise settlement.
-4. **20% Developer Affiliate Share (`affiliateShareUsd`):** Pass your `referrerWallet` (or configure it once in `agent-plugins`) to automatically receive **20% of TaxRail's total fee**.
+1. **Swaps (`0x v2` EVM / `Jupiter` Solana):** TaxRail embeds `embeddedSwapFeeBps` / `embeddedSwapFeePpm` (up to `1000 bps` / `10%` of trade) directly in the `0x v2` or `Jupiter` quote so 100% of the 10% savings fee is collected from the swap's output token (`USDC`, `wstETH`, `cbETH`, etc.) in 1 transaction.
+2. **Aave v3 Borrow-vs-Sell:** `buildAaveBorrowPayload` adds the 10% savings fee on top of `liquidityNeededUsd` (`totalBorrowAmountUsd = netLiquidityUsd + feePaidFromBorrowUsd`) and builds `atomicBatchCalls` (`approve` → `supply` → `borrow` → `USDC.transfer`), so the user keeps 100% of their requested liquidity and pays $0 out of pocket.
+3. **20% On-Chain Affiliate Share (`affiliateShareUsd`):** Pass `referrerWallet` (or `?ref=0xWallet` on `taxrail.online`) to automatically receive **20% of TaxRail's 10% fee** natively inside the `0x v2` multi-recipient split or `Aave v3` USDC transfer.
 
 ---
 
@@ -103,10 +103,12 @@ Add to Claude Desktop, Cursor, or any MCP-compatible agent runtime:
   - `GET /api/v1/x402/br-35k-status?monthlySalesBrl=20000&plannedSaleUsd=2500&custodyLocation=DOMESTIC` (**$0.005 USDC** Brazil R$35k monthly domestic exemption vs Lei 14.754 flat 15% check via x402)
   - `GET /api/v1/x402/tlh-scan?walletAddress=0x...&chain=base&asset=ALL` (**$0.01 USDC** 1-parameter multi-asset wallet TLH & tax-risk scanner covering up to 25 volatile tokens via x402, with per-token `planId`s)
   - `POST /api/v1/x402/optimize` (**$0.10 USDC** 1-step full optimization + calldata + dossier via x402)
-  - `POST /api/v1/check-tax-impact` (Free preview -> dynamic `unlock-plan`)
-  - `POST /api/v1/borrow-vs-sell` (Free preview -> dynamic `unlock-plan`)
-  - `POST /api/v1/classify-expense` (Free preview -> dynamic `unlock-plan`)
-  - `POST /api/v1/unlock-plan` (Dynamic x402 `USDC` on `eip155:8453`, 10% of verified tax savings)
+  - `POST /api/v1/check-tax-impact` (Free preview -> 1-click `prepare-execution` or `unlock-plan`)
+  - `POST /api/v1/borrow-vs-sell` (Free preview -> 1-click `prepare-execution` or `unlock-plan`)
+  - `POST /api/v1/classify-expense` (Free preview -> `unlock-plan`)
+  - `POST /api/v1/prepare-execution` (**$0 upfront** — returns `0x v2` / `Jupiter` / `Aave v3` batch with 10% fee from operation)
+  - `POST /api/v1/claim-dossier` (Verifies on-chain receipt by `txHash` and unlocks SpecID lots + Form 8949 / DeCripto CSV)
+  - `POST /api/v1/unlock-plan` (Dynamic x402 `USDC` fallback on `eip155:8453`, 10% of verified tax savings)
   - `POST /api/v1/feedback` & `GET /api/v1/reputation` (Free agent feedback loop & BaseScan-verified public reputation)
 
 ### 3. Coinbase AgentKit & SDK (`npm install taxrail-agent-tools`)

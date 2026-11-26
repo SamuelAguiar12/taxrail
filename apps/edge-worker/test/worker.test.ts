@@ -1,5 +1,5 @@
 import { decodePaymentRequiredHeader } from "@x402/core/http";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createCdpFacilitatorAuthHeaders } from "../src/cdp-auth.js";
 import { recordPaidReceipt } from "../src/feedback.js";
 import app from "../src/index.js";
@@ -45,11 +45,11 @@ describe("TaxRail Edge Worker", () => {
       expect(resAlias.status).toBe(200);
       const cardAlias = (await resAlias.json()) as Record<string, unknown>;
       expect(cardAlias.name).toBe("TaxRail");
-      expect(cardAlias.skills).toHaveLength(5);
+      expect(cardAlias.skills).toHaveLength(6);
 
       expect((card.affiliateProgram as Record<string, unknown>).revsharePct).toBe(0.2);
       expect(Array.isArray(card.skills)).toBe(true);
-      expect((card.skills as unknown[]).length).toBe(5);
+      expect((card.skills as unknown[]).length).toBe(6);
     });
 
     it("serves GET /llms.txt with 2-step funnel documentation", async () => {
@@ -766,7 +766,7 @@ describe("TaxRail Edge Worker", () => {
       Accept: "application/json, text/event-stream",
     };
 
-    it("handles JSON-RPC initialize and tools/list returning all 7 TaxRail tools", async () => {
+    it("handles JSON-RPC initialize and tools/list returning all 9 TaxRail tools", async () => {
       const initRes = await app.request(
         "/mcp",
         {
@@ -821,9 +821,11 @@ describe("TaxRail Edge Worker", () => {
           "scan_wallet_tlh",
           "pre_trade_check",
           "check_br_35k_status",
+          "prepare_execution",
+          "claim_dossier",
         ])
       );
-      expect(toolNames).toHaveLength(7);
+      expect(toolNames).toHaveLength(9);
 
       // New MCP tools enforce x402 402 unpaid and return structured 200 when paid
       const brMcpUnpaid = await app.request(
@@ -1315,6 +1317,306 @@ describe("TaxRail Edge Worker", () => {
       };
       expect(catalog.services[0]?.mediaType).toBe("application/mcp-server-card+json");
       expect(catalog.services[0]?.card.name).toBe("io.github.SamuelAguiar12/taxrail");
+    });
+  });
+
+  describe("$0-Upfront 1-Click Execution & On-Chain Dossier Claim", () => {
+    it("prepares 0x v2 swap execution with >100 bps fee embedded (no lotId leakage) and claims dossier after mocked on-chain ERC-20 receipt verification", async () => {
+      const treasury = testEnv.PAY_TO_ADDRESS!;
+      const previewRes = await app.request(
+        "/api/v1/check-tax-impact",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            jurisdiction: "US",
+            regime: "INDIVIDUAL",
+            chain: "ethereum",
+            targetAsset: "ETH",
+            sellQuantity: 1,
+            currentPriceUsd: 3000,
+            asOfDate: "2026-06-01T00:00:00Z",
+            lots: [
+              {
+                lotId: "secret-eth-fifo-lot",
+                asset: "ETH",
+                quantity: 1,
+                costBasisUsd: 500,
+                acquiredAt: "2024-01-01T00:00:00Z",
+                custodyLocation: "SELF_CUSTODY",
+              },
+              {
+                lotId: "secret-eth-hifo-lot",
+                asset: "ETH",
+                quantity: 1,
+                costBasisUsd: 2900,
+                acquiredAt: "2026-03-01T00:00:00Z",
+                custodyLocation: "SELF_CUSTODY",
+              },
+            ],
+          }),
+        },
+        testEnv
+      );
+      expect(previewRes.status).toBe(200);
+      const preview = (await previewRes.json()) as {
+        planId: string;
+        taxSavedUsd: number;
+        pricing: {
+          settlementMode: string;
+          zeroUpfrontAvailable: boolean;
+          operationFeeUsd: number;
+          embeddedSwapFeeBps: number;
+        };
+        zeroUpfrontExecution?: { endpoint: string; upfrontPaymentRequiredUsd: number };
+      };
+      expect(preview.pricing.settlementMode).toBe("PAY_FROM_OPERATION");
+      expect(preview.pricing.zeroUpfrontAvailable).toBe(true);
+      expect(preview.pricing.operationFeeUsd).toBeGreaterThan(0);
+      expect(preview.zeroUpfrontExecution?.endpoint).toBe("/api/v1/prepare-execution");
+      expect(preview.zeroUpfrontExecution?.upfrontPaymentRequiredUsd).toBe(0);
+
+      const prepRes = await app.request(
+        "/api/v1/prepare-execution",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            planId: preview.planId,
+            takerAddress: "0x4444444444444444444444444444444444444444",
+            buyAsset: "USDC",
+          }),
+        },
+        testEnv
+      );
+      expect(prepRes.status).toBe(200);
+      const prepText = await prepRes.text();
+      expect(prepText).not.toContain("secret-eth-fifo-lot");
+      expect(prepText).not.toContain("secret-eth-hifo-lot");
+      expect(prepText).not.toContain("selectedLots");
+      expect(prepText).not.toContain("accountingDossier");
+
+      const prep = JSON.parse(prepText) as {
+        upfrontCostUsd: number;
+        feePaidFromOperationUsd: number;
+        executionPayload: {
+          type: string;
+          swapIntent?: { venue: string; integratorFeeBps: number };
+          expectedFeeTokenAddress?: string;
+          expectedTreasuryFeeAtomic?: string;
+        };
+      };
+      expect(prep.upfrontCostUsd).toBe(0);
+      expect(prep.feePaidFromOperationUsd).toBe(preview.pricing.operationFeeUsd);
+      expect(prep.executionPayload.type).toBe("SWAP_0X_V2");
+      expect(prep.executionPayload.swapIntent?.venue).toBe("0x_v2");
+      expect(prep.executionPayload.swapIntent?.integratorFeeBps).toBe(
+        preview.pricing.embeddedSwapFeeBps
+      );
+
+      // Mock on-chain receipt RPC: first a tx WITHOUT fee transfer -> 402, then valid receipt -> 200
+      const fakeTxHash =
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+      const treasuryTopic = `0x000000000000000000000000${treasury.slice(2).toLowerCase()}`;
+      const expectedAtomicHex = `0x${BigInt(
+        Math.ceil(prep.feePaidFromOperationUsd * 1_000_000)
+      )
+        .toString(16)
+        .padStart(64, "0")}`;
+
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              result: { status: "0x1", logs: [] },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              result: {
+                status: "0x1",
+                logs: [
+                  {
+                    address: prep.executionPayload.expectedFeeTokenAddress,
+                    topics: [
+                      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+                      "0x0000000000000000000000004444444444444444444444444444444444444444",
+                      treasuryTopic,
+                    ],
+                    data: expectedAtomicHex,
+                  },
+                ],
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+
+      try {
+        const failedClaim = await app.request(
+          "/api/v1/claim-dossier",
+          {
+            method: "POST",
+            headers: jsonHeaders(),
+            body: JSON.stringify({
+              planId: preview.planId,
+              txHash: fakeTxHash,
+              chain: "ethereum",
+            }),
+          },
+          testEnv
+        );
+        expect(failedClaim.status).toBe(402);
+
+        const okClaim = await app.request(
+          "/api/v1/claim-dossier",
+          {
+            method: "POST",
+            headers: jsonHeaders(),
+            body: JSON.stringify({
+              planId: preview.planId,
+              txHash: fakeTxHash,
+              chain: "ethereum",
+            }),
+          },
+          testEnv
+        );
+        expect(okClaim.status).toBe(200);
+        const claimData = (await okClaim.json()) as {
+          verified: boolean;
+          explorerUrl: string;
+          plan: { selectedLots?: Array<{ lotId: string }>; accountingDossier: { csvExport?: string } };
+        };
+        expect(claimData.verified).toBe(true);
+        expect(claimData.explorerUrl).toBe(`https://etherscan.io/tx/${fakeTxHash}`);
+        expect(claimData.plan.selectedLots?.[0]?.lotId).toBe("secret-eth-hifo-lot");
+        expect(claimData.plan.accountingDossier.csvExport).toContain("Description of Property");
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it("prepares Aave v3 atomicBatchCalls borrowing liquidity + 10% fee and supports MCP prepare_execution + claim_dossier", async () => {
+      const mcpHeaders = {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      };
+
+      const borrowRes = await app.request(
+        "/api/v1/borrow-vs-sell",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            jurisdiction: "US",
+            regime: "INDIVIDUAL",
+            chain: "base",
+            borrowerAddress: "0x5555555555555555555555555555555555555555",
+            collateralAsset: "ETH",
+            collateralAmount: 10,
+            collateralPriceUsd: 3000,
+            collateralCostBasisUsd: 500,
+            holdingDays: 180,
+            liquidityNeededUsd: 10000,
+          }),
+        },
+        testEnv
+      );
+      expect(borrowRes.status).toBe(200);
+      const borrowPreview = (await borrowRes.json()) as {
+        planId: string;
+        pricing: { operationFeeUsd: number };
+      };
+
+      const mcpPrepRes = await app.request(
+        "/mcp",
+        {
+          method: "POST",
+          headers: mcpHeaders,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 77,
+            method: "tools/call",
+            params: {
+              name: "prepare_execution",
+              arguments: {
+                planId: borrowPreview.planId,
+                borrowerAddress: "0x5555555555555555555555555555555555555555",
+              },
+            },
+          }),
+        },
+        testEnv
+      );
+      expect(mcpPrepRes.status).toBe(200);
+      const mcpPrepRpc = (await mcpPrepRes.json()) as {
+        result?: { isError?: boolean; content: Array<{ text: string }> };
+      };
+      expect(mcpPrepRpc.result?.isError).toBeFalsy();
+      const prepData = JSON.parse(mcpPrepRpc.result!.content[0]!.text) as {
+        upfrontCostUsd: number;
+        feePaidFromOperationUsd: number;
+        executionPayload: {
+          type: string;
+          aaveActions?: {
+            netLiquidityUsd: number;
+            feePaidFromBorrowUsd: number;
+            totalBorrowAmountUsd: number;
+            atomicBatchCalls: unknown[];
+          };
+        };
+      };
+      expect(prepData.upfrontCostUsd).toBe(0);
+      expect(prepData.feePaidFromOperationUsd).toBe(borrowPreview.pricing.operationFeeUsd);
+      expect(prepData.executionPayload.type).toBe("AAVE_V3_BORROW_BATCH");
+      expect(prepData.executionPayload.aaveActions?.netLiquidityUsd).toBe(10000);
+      expect(prepData.executionPayload.aaveActions?.totalBorrowAmountUsd).toBeCloseTo(
+        10000 + borrowPreview.pricing.operationFeeUsd,
+        2
+      );
+      expect(prepData.executionPayload.aaveActions?.atomicBatchCalls.length).toBe(4);
+
+      const mcpClaimRes = await app.request(
+        "/mcp",
+        {
+          method: "POST",
+          headers: mcpHeaders,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 78,
+            method: "tools/call",
+            params: {
+              name: "claim_dossier",
+              arguments: {
+                planId: borrowPreview.planId,
+                txHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                chain: "base",
+                paymentSignature: `dev-bypass:${TEST_BYPASS_TOKEN}`,
+              },
+            },
+          }),
+        },
+        testEnv
+      );
+      expect(mcpClaimRes.status).toBe(200);
+      const mcpClaimRpc = (await mcpClaimRes.json()) as {
+        result?: { isError?: boolean; content: Array<{ text: string }> };
+      };
+      expect(mcpClaimRpc.result?.isError).toBeFalsy();
+      const claimPayload = JSON.parse(mcpClaimRpc.result!.content[0]!.text) as {
+        verified: boolean;
+        plan: { accountingDossier: { format: string } };
+      };
+      expect(claimPayload.verified).toBe(true);
+      expect(claimPayload.plan.accountingDossier.format).toBe("IRS_FORM_8949");
     });
   });
 });

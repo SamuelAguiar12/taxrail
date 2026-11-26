@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "taxrail"
-version = "0.1.0"
-description = "Autonomous pre-execution crypto & DeFi tax optimization SDK for AI agents (US IRS 1099-DA, Form 8949, HIFO/SpecID, TLH, Aave v3 borrow-vs-sell & Brazil Lei 14.754 / R$35k rule) via x402 Base USDC."
+version = "0.2.0"
+description = "Autonomous $0-upfront 1-click US & Brazil crypto & DeFi tax optimization SDK for AI agents (10% fee paid from operation, 0x v2 / Jupiter / Aave v3, IRS 1099-DA, Form 8949 & Lei 14.754 / DeCripto)."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"

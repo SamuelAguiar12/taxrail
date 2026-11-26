@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   AAVE_V3_POOL_ABI,
   AAVE_V3_POOL_ADDRESSES,
+  ERC20_ABI,
   EVM_TOKEN_REGISTRY,
   FALLBACK_BORROWER_ADDRESS,
   buildAaveBorrowPayload,
@@ -27,8 +28,12 @@ function makePricing(
     taxSavedUsd: 2500,
     feeRatePct: 0.1,
     totalFeeUsd: 250,
+    settlementMode: "PAY_FROM_OPERATION",
+    zeroUpfrontAvailable: true,
+    operationFeeUsd: 250,
     upfrontX402Usd: 10,
     embeddedSwapFeeBps: 50,
+    embeddedSwapFeePpm: 5000,
     embeddedSwapFeeUsd: 240,
     enterpriseBalanceUsd: 0,
     affiliateShareUsd: 0,
@@ -139,45 +144,103 @@ describe("buildAaveBorrowPayload", () => {
         abi: AAVE_V3_POOL_ABI,
         data: payload.supplyTransaction!.data,
       });
+      expect(decodedSupply.functionName).toBe("supply");
       expect(decodedSupply.args[2]).toBe(FALLBACK_BORROWER_ADDRESS);
     }
+  });
+
+  it("borrows liquidityNeeded + 10% TaxRail fee and builds atomicBatchCalls with 80/20 USDC transfer split", () => {
+    const treasury = "0x0202e70990d90325A1Dca322C91471Be774E4B6f";
+    const affiliate = "0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1";
+    const borrower = "0x1111111111111111111111111111111111111111";
+
+    const payload = buildAaveBorrowPayload({
+      chain: "base",
+      borrowerAddress: borrower,
+      collateralAsset: "ETH",
+      collateralAmount: 4,
+      borrowAmountUsd: 5000,
+      feeAmountUsd: 250,
+      treasuryWallet: treasury,
+      affiliateWallet: affiliate,
+    });
+
+    expect(payload.netLiquidityUsd).toBe(5000);
+    expect(payload.feePaidFromBorrowUsd).toBe(250);
+    expect(payload.totalBorrowAmountUsd).toBe(5250);
+    expect(payload.atomicBatchCalls).toHaveLength(5); // approve, supply, borrow, fee transfer, affiliate transfer
+
+    const decodedBorrow = decodeFunctionData({
+      abi: AAVE_V3_POOL_ABI,
+      data: payload.borrowTransaction.data,
+    });
+    expect(decodedBorrow.args[1]).toBe(5250_000_000n);
+
+    const decodedTreasuryFee = decodeFunctionData({
+      abi: ERC20_ABI,
+      data: payload.feeTransferTransaction!.data,
+    });
+    expect(decodedTreasuryFee.functionName).toBe("transfer");
+    expect(decodedTreasuryFee.args[0]).toBe(treasury);
+    expect(decodedTreasuryFee.args[1]).toBe(200_000_000n);
+
+    const decodedAffFee = decodeFunctionData({
+      abi: ERC20_ABI,
+      data: payload.affiliateFeeTransferTransaction!.data,
+    });
+    expect(decodedAffFee.functionName).toBe("transfer");
+    expect(decodedAffFee.args[0]).toBe(affiliate);
+    expect(decodedAffFee.args[1]).toBe(50_000_000n);
   });
 });
 
 describe("buildSwapIntent", () => {
-  const treasury = "0xTreasury00000000000000000000000000000001";
-  const affiliate = "0xAffiliate0000000000000000000000000000002";
+  const treasury = "0x0202e70990d90325A1Dca322C91471Be774E4B6f";
+  const affiliate = "0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1";
 
-  it("enforces integratorFeeBps <= 100 even when pricing requests a higher value", () => {
-    const intent = buildSwapIntent({
+  it("supports up to 1000 bps (10%) and caps higher requests cleanly on 0x v2", () => {
+    const intent250 = buildSwapIntent({
       chain: "base",
       sellAsset: "WETH",
       buyAsset: "USDC",
       sellAmountDecimal: "2.5",
-      pricing: makePricing({ embeddedSwapFeeBps: 250 }),
+      pricing: makePricing({ embeddedSwapFeeBps: 250, embeddedSwapFeePpm: 25000 }),
       treasuryWallet: treasury,
     });
 
-    expect(intent.venue).toBe("0x_v2");
-    expect(intent.integratorFeeBps).toBe(100);
-    expect(intent.feeRecipients).toEqual([
+    expect(intent250.venue).toBe("0x_v2");
+    expect(intent250.integratorFeeBps).toBe(250);
+    expect(intent250.integratorFeePpm).toBe(25000);
+    expect(intent250.feeRecipients).toEqual([
       {
         recipient: treasury,
-        shareBps: 100,
+        shareBps: 250,
         role: "TAXRAIL_TREASURY",
       },
     ]);
 
-    const req = intent.requestTemplate as {
+    const req = intent250.requestTemplate as {
       endpoint: string;
       queryParams: Record<string, unknown>;
     };
     expect(req.endpoint).toBe("/swap/allowance-holder/quote");
-    expect(req.queryParams.swapFeeBps).toBe(100);
+    expect(req.queryParams.swapFeeBps).toBe(250);
+    expect(req.queryParams.swapFeePpm).toBe(25000);
     expect(req.queryParams.swapFeeRecipient).toBe(treasury);
+
+    const capped = buildSwapIntent({
+      chain: "base",
+      sellAsset: "WETH",
+      buyAsset: "USDC",
+      sellAmountDecimal: "1.0",
+      pricing: makePricing({ embeddedSwapFeeBps: 1500, embeddedSwapFeePpm: 150000 }),
+      treasuryWallet: treasury,
+    });
+    expect(capped.integratorFeeBps).toBe(1000);
+    expect(capped.integratorFeePpm).toBe(100000);
   });
 
-  it("splits feeRecipients 80/20 when affiliateWallet is present", () => {
+  it("splits feeRecipients 80/20 natively in 0x v2 comma-separated parameters when affiliateWallet is valid EVM", () => {
     const intent = buildSwapIntent({
       chain: "arbitrum",
       sellAsset: "WBTC",
@@ -185,6 +248,7 @@ describe("buildSwapIntent", () => {
       sellAmountDecimal: "0.25",
       pricing: makePricing({
         embeddedSwapFeeBps: 80,
+        embeddedSwapFeePpm: 8000,
         affiliateWallet: affiliate,
       }),
       treasuryWallet: treasury,
@@ -192,6 +256,7 @@ describe("buildSwapIntent", () => {
 
     expect(intent.venue).toBe("0x_v2");
     expect(intent.integratorFeeBps).toBe(80);
+    expect(intent.multiRecipientSplit).toBe(true);
     expect(intent.feeRecipients).toEqual([
       {
         recipient: treasury,
@@ -204,24 +269,25 @@ describe("buildSwapIntent", () => {
         role: "AFFILIATE_AGENT",
       },
     ]);
+    const req = intent.requestTemplate as { queryParams: Record<string, unknown> };
+    expect(req.queryParams.swapFeeRecipient).toBe(`${treasury},${affiliate}`);
+    expect(req.queryParams.swapFeeBps).toBe("64,16");
   });
 
-  it("builds CoW Swap template for ethereum and Jupiter template for solana", () => {
+  it("routes ethereum to 0x_v2 (with wstETH/cbETH TLH assets) and solana to Jupiter", () => {
     const ethIntent = buildSwapIntent({
       chain: "ethereum",
-      sellAsset: "WETH",
-      buyAsset: "USDC",
+      sellAsset: "ETH",
+      buyAsset: "wstETH",
       sellAmountDecimal: "1.0",
-      pricing: makePricing({ embeddedSwapFeeBps: 45 }),
+      pricing: makePricing({ embeddedSwapFeeBps: 145, embeddedSwapFeePpm: 14500 }),
       treasuryWallet: treasury,
     });
-    expect(ethIntent.venue).toBe("cow_swap");
-    expect(ethIntent.requestTemplate.endpoint).toBe("/api/v1/quote");
-    const cowBody = ethIntent.requestTemplate.body as {
-      appData: { metadata: { partnerFee: { bps: number; recipient: string } } };
-    };
-    expect(cowBody.appData.metadata.partnerFee.bps).toBe(45);
-    expect(cowBody.appData.metadata.partnerFee.recipient).toBe(treasury);
+    expect(ethIntent.venue).toBe("0x_v2");
+    expect(ethIntent.requestTemplate.endpoint).toBe("/swap/allowance-holder/quote");
+    const ethParams = ethIntent.requestTemplate.queryParams as Record<string, unknown>;
+    expect(ethParams.swapFeeBps).toBe(145);
+    expect(ethParams.buyToken).toBe("0x7f39C581F595B53c5cb19bD0b3F8dA6c935E2Ca0");
 
     const solIntent = buildSwapIntent({
       chain: "solana",

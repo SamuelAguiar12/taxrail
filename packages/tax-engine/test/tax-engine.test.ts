@@ -450,45 +450,82 @@ describe("Dynamic Pricing Engine", () => {
     });
 
     expect(q.totalFeeUsd).toBe(0);
+    expect(q.settlementMode).toBe("FREE");
+    expect(q.zeroUpfrontAvailable).toBe(true);
+    expect(q.operationFeeUsd).toBe(0);
     expect(q.upfrontX402Usd).toBe(0);
     expect(q.embeddedSwapFeeBps).toBe(0);
+    expect(q.embeddedSwapFeePpm).toBe(0);
     expect(q.affiliateShareUsd).toBe(0);
     expect(q.roiMultiple).toBe(0);
   });
 
-  it("charges 100% upfront x402 when totalFeeUsd <= $50", () => {
+  it("collects 100% of the 10% fee from swap output with $0 upfront up to 1000 bps (10%)", () => {
     const q = calculateDynamicPricing({
       taxSavedUsd: 300,
       pricingTier: "STANDARD",
       estimatedTransactionUsd: 10000,
     });
 
+    expect(q.feeRatePct).toBe(0.1);
     expect(q.totalFeeUsd).toBe(30);
-    expect(q.upfrontX402Usd).toBe(30);
-    expect(q.embeddedSwapFeeBps).toBe(0);
-    expect(q.embeddedSwapFeeUsd).toBe(0);
+    expect(q.settlementMode).toBe("PAY_FROM_OPERATION");
+    expect(q.zeroUpfrontAvailable).toBe(true);
+    expect(q.operationFeeUsd).toBe(30);
+    expect(q.embeddedSwapFeeBps).toBe(30);
+    expect(q.embeddedSwapFeePpm).toBe(3000);
+    expect(q.embeddedSwapFeeUsd).toBe(30);
     expect(q.enterpriseBalanceUsd).toBe(0);
+    expect(q.upfrontX402Usd).toBe(30);
     expect(q.clientNetBenefitUsd).toBe(270);
     expect(q.roiMultiple).toBe(10);
   });
 
-  it("applies >$50 hybrid guardrail ($10 upfront + swap bps <= 100 + enterprise overflow) and 20% affiliate split", () => {
+  it("guarantees minimum 10% fee even for VOLUME/ENTERPRISE tiers and scales swap bps >100 up to 1000 bps with 20% affiliate split", () => {
     const q = calculateDynamicPricing({
       taxSavedUsd: 5000,
-      pricingTier: "STANDARD", // 10% -> $500 totalFee
-      estimatedTransactionUsd: 20000, // remaining $490 -> 245 bps -> capped at 100 bps ($200)
+      pricingTier: "ENTERPRISE", // guaranteed >= 10% -> $500 totalFee
+      estimatedTransactionUsd: 20000, // $500 / $20,000 = 250 bps (25,000 ppm)
       referrerWallet: "0xAgentReferrer999",
     });
 
+    expect(q.feeRatePct).toBe(0.1);
     expect(q.totalFeeUsd).toBe(500);
-    expect(q.upfrontX402Usd).toBe(10);
-    expect(q.embeddedSwapFeeBps).toBe(100);
-    expect(q.embeddedSwapFeeUsd).toBe(200);
-    expect(q.enterpriseBalanceUsd).toBe(290);
+    expect(q.settlementMode).toBe("PAY_FROM_OPERATION");
+    expect(q.zeroUpfrontAvailable).toBe(true);
+    expect(q.operationFeeUsd).toBe(500);
+    expect(q.embeddedSwapFeeBps).toBe(250);
+    expect(q.embeddedSwapFeePpm).toBe(25000);
+    expect(q.embeddedSwapFeeUsd).toBe(500);
+    expect(q.enterpriseBalanceUsd).toBe(0);
+    expect(q.upfrontX402Usd).toBe(10); // optional x402 fallback cap
     expect(q.affiliateWallet).toBe("0xAgentReferrer999");
     expect(q.affiliateShareUsd).toBe(100);
     expect(q.clientNetBenefitUsd).toBe(4500);
     expect(q.roiMultiple).toBe(10);
+  });
+
+  it("routes 100% of borrow-vs-sell fee into operationFeeUsd and uses UPFRONT_X402 for non-onchain expenses", () => {
+    const borrowPricing = calculateDynamicPricing({
+      taxSavedUsd: 3500,
+      estimatedTransactionUsd: 15000,
+      supportsOnchainFee: true,
+      isBorrowOperation: true,
+    });
+    expect(borrowPricing.settlementMode).toBe("PAY_FROM_OPERATION");
+    expect(borrowPricing.zeroUpfrontAvailable).toBe(true);
+    expect(borrowPricing.operationFeeUsd).toBe(350);
+    expect(borrowPricing.enterpriseBalanceUsd).toBe(0);
+
+    const expensePricing = calculateDynamicPricing({
+      taxSavedUsd: 2000,
+      estimatedTransactionUsd: 10000,
+      supportsOnchainFee: false,
+    });
+    expect(expensePricing.settlementMode).toBe("UPFRONT_X402");
+    expect(expensePricing.zeroUpfrontAvailable).toBe(false);
+    expect(expensePricing.operationFeeUsd).toBe(0);
+    expect(expensePricing.upfrontX402Usd).toBe(50);
   });
 
   it("caps minimum $0.50 fee at 50% of taxSavedUsd", () => {

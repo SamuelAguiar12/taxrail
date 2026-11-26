@@ -13,6 +13,7 @@ Plano gradual em 4 fases para levar a **TaxRail** do monorepo local até uma inf
 - [x] **Motor Tributário (`packages/tax-engine`):** Simulação determinística FIFO vs HIFO/SpecID, Tax-Loss Harvesting, comparativo `compare_borrow_vs_sell` (Aave v3) e análise de despesas dedutíveis (`classify_deductible_expense`).
 - [x] **Construtores Não-Custodiais (`packages/execution`):** Geração de `SwapIntentPayload` (`0x_v2`, `cow_swap`, `jupiter`), `AaveActionPayload` (`aave_v3`) e dossiês (`IRS_FORM_8949`, `QUICKBOOKS_EXPENSE`, `BR_LEI_14754`, `BR_LUCRO_REAL_OMIE_SPED`).
 - [x] **Interfaces de Agente (`packages/mcp-cli` e `packages/agent-plugins`):** Servidor MCP stdio (`@taxrail/mcp`), plugin Coinbase AgentKit, tools LangChain e node declarativo n8n com suporte nativo a `referrerWallet`.
+- [x] **Execução 1-Clique $0 Upfront (`prepare-execution` + `claim-dossier`):** Cobrança garantida de **10% da economia verificada** diretamente na própria operação via `0x v2` (até `1000 bps` com multi-recipient 80/20), `Jupiter` e `Aave v3` (`atomicBatchCalls` borrow + transfer), com verificação automática de recibo on-chain e liberação do CSV (`IRS Form 8949` / `BR Lei 14.754 / DeCripto`).
 - [x] **Automação Financeira & CI:** Workflow `.github/workflows/ci.yml` (`typecheck`, `test`, `deploy:dry-run`) e script `scripts/export-revenue-ledger.ts` para consolidação PTAX / Simples Nacional (Fator R).
 
 ### Critério de Saída da Fase 0

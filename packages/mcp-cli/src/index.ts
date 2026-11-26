@@ -15,10 +15,12 @@ import {
   BorrowVsSellInputSchema,
   type CheckTaxImpactInput,
   CheckTaxImpactInputSchema,
+  ClaimDossierInputSchema,
   type DeductibleExpenseInput,
   DeductibleExpenseInputSchema,
   type DynamicPricingQuote,
   type FullTaxOptimizationPlan,
+  PrepareExecutionInputSchema,
   type SwapIntentPayload,
   UnlockPlanInputSchema,
 } from "@taxrail/shared";
@@ -241,6 +243,9 @@ function runLocalBorrowVsSell(input: BorrowVsSellInput) {
       collateralAsset: input.collateralAsset,
       collateralAmount: input.collateralAmount,
       borrowAmountUsd: input.liquidityNeededUsd,
+      feeAmountUsd: pricing.operationFeeUsd,
+      treasuryWallet: getTreasuryWallet(),
+      affiliateWallet: input.referrerWallet,
     });
   } catch (err) {
     executionNotes.push(
@@ -322,7 +327,7 @@ function runLocalClassifyExpense(input: DeductibleExpenseInput) {
 export function createStdioMcpServer(): McpServer {
   const server = new McpServer({
     name: "taxrail-mcp",
-    version: "0.2.0",
+    version: "0.3.0",
   });
 
   server.registerTool(
@@ -604,6 +609,167 @@ export function createStdioMcpServer(): McpServer {
         });
       }
       return res.status >= 400 ? textError(res.data) : textSuccess(res.data);
+    }
+  );
+
+  server.registerTool(
+    "prepare_execution",
+    {
+      title: "Prepare $0-Upfront 1-Click Execution (Pay 10% From Operation)",
+      description:
+        "FREE pre-execution step: returns ready-to-sign 0x v2 / Jupiter swap calldata or Aave v3 atomic borrow batch with TaxRail's exact 10% verified-savings fee embedded inside the operation ($0 upfront). Broadcast the tx and call `claim_dossier` to unlock SpecID lots & CSV.",
+      inputSchema: PrepareExecutionInputSchema,
+    },
+    async (args) => {
+      const remote = getRemoteBaseUrl() || getApiBaseUrl();
+      if (!localPlanStore.has(args.planId) || getRemoteBaseUrl()) {
+        try {
+          const res = await postRemoteJson(remote, "/api/v1/prepare-execution", args);
+          return res.status >= 400 ? textError(res.data) : textSuccess(res.data);
+        } catch (err) {
+          return textError({
+            error: err instanceof Error ? err.message : "Failed to prepare execution",
+          });
+        }
+      }
+
+      const stored = localPlanStore.get(args.planId)!;
+      if (Date.now() > stored.expiresAtMs) {
+        localPlanStore.delete(args.planId);
+        return textError({ status: 404, error: "Plan expired", planId: args.planId });
+      }
+      if (stored.plan.planType === "DEDUCTIBLE_EXPENSE") {
+        return textError({
+          status: 400,
+          error: "DEDUCTIBLE_EXPENSE plans use unlock_tax_plan.",
+        });
+      }
+      if (stored.plan.planType === "BORROW_VS_SELL" && stored.plan.aaveActions) {
+        return textSuccess({
+          planId: stored.plan.planId,
+          planType: "BORROW_VS_SELL",
+          chain: stored.plan.aaveActions.chain,
+          settlementMode: stored.pricing.totalFeeUsd > 0 ? "PAY_FROM_OPERATION" : "FREE",
+          upfrontCostUsd: 0,
+          feePaidFromOperationUsd: stored.plan.aaveActions.feePaidFromBorrowUsd,
+          feeRatePct: stored.pricing.feeRatePct,
+          taxSavedUsd: stored.plan.taxSavedUsd,
+          clientNetBenefitUsd: stored.pricing.clientNetBenefitUsd,
+          roiMultiple: stored.pricing.roiMultiple,
+          treasuryWallet: getTreasuryWallet(),
+          executionPayload: {
+            type: "AAVE_V3_BORROW_BATCH",
+            aaveActions: stored.plan.aaveActions,
+          },
+          nextAction: {
+            tool: "claim_dossier",
+            endpoint: "/api/v1/claim-dossier",
+            planId: stored.plan.planId,
+            instruction:
+              "Execute atomicBatchCalls then call claim_dossier with { planId, txHash }.",
+          },
+          disclaimer: stored.plan.disclaimer,
+        });
+      }
+      const swapIntent = stored.plan.swapIntent
+        ? buildSwapIntent({
+            chain: stored.plan.swapIntent.chain,
+            sellAsset: stored.plan.swapIntent.sellAsset,
+            buyAsset: args.buyAsset || stored.plan.swapIntent.buyAsset,
+            sellAmountDecimal: stored.plan.swapIntent.sellAmountDecimal,
+            pricing: stored.pricing,
+            treasuryWallet: getTreasuryWallet(),
+            takerAddress: args.takerAddress,
+          })
+        : undefined;
+      return textSuccess({
+        planId: stored.plan.planId,
+        planType: "CRYPTO_DISPOSAL",
+        chain: swapIntent?.chain ?? "base",
+        settlementMode: stored.pricing.totalFeeUsd > 0 ? "PAY_FROM_OPERATION" : "FREE",
+        upfrontCostUsd: 0,
+        feePaidFromOperationUsd: stored.pricing.operationFeeUsd,
+        feeRatePct: stored.pricing.feeRatePct,
+        taxSavedUsd: stored.plan.taxSavedUsd,
+        clientNetBenefitUsd: stored.pricing.clientNetBenefitUsd,
+        roiMultiple: stored.pricing.roiMultiple,
+        treasuryWallet: getTreasuryWallet(),
+        executionPayload: {
+          type: swapIntent?.venue === "jupiter" ? "SWAP_JUPITER" : "SWAP_0X_V2",
+          swapIntent,
+        },
+        nextAction: {
+          tool: "claim_dossier",
+          endpoint: "/api/v1/claim-dossier",
+          planId: stored.plan.planId,
+          instruction: "Broadcast swap tx then call claim_dossier with { planId, txHash }.",
+        },
+        disclaimer: stored.plan.disclaimer,
+      });
+    }
+  );
+
+  const ClaimDossierToolSchema = ClaimDossierInputSchema.extend({
+    paymentSignature: z.string().optional(),
+  });
+
+  server.registerTool(
+    "claim_dossier",
+    {
+      title: "Claim Tax Dossier After On-Chain Execution",
+      description:
+        "Verifies the settled swap or Aave borrow txHash on-chain and unlocks SpecID selectedLots + Form 8949 / Brazil DeCripto CSV.",
+      inputSchema: ClaimDossierToolSchema,
+    },
+    async (args) => {
+      const paymentHeader =
+        args.paymentSignature?.trim() ||
+        (process.env.TAXRAIL_DEV_BYPASS
+          ? `dev-bypass:${process.env.TAXRAIL_DEV_BYPASS}`
+          : undefined);
+      const remote = getRemoteBaseUrl() || getApiBaseUrl();
+      if (!localPlanStore.has(args.planId) || getRemoteBaseUrl()) {
+        try {
+          const res = await postRemoteJson(
+            remote,
+            "/api/v1/claim-dossier",
+            {
+              planId: args.planId,
+              txHash: args.txHash,
+              ...(args.chain ? { chain: args.chain } : {}),
+              ...(args.feeTxHash ? { feeTxHash: args.feeTxHash } : {}),
+            },
+            paymentHeader ? { "PAYMENT-SIGNATURE": paymentHeader } : {}
+          );
+          return res.status >= 400 ? textError(res.data) : textSuccess(res.data);
+        } catch (err) {
+          return textError({
+            error: err instanceof Error ? err.message : "Failed to claim dossier",
+          });
+        }
+      }
+
+      const stored = localPlanStore.get(args.planId)!;
+      if (
+        stored.pricing.totalFeeUsd <= 0 ||
+        (process.env.TAXRAIL_DEV_BYPASS &&
+          paymentHeader === `dev-bypass:${process.env.TAXRAIL_DEV_BYPASS}`)
+      ) {
+        return textSuccess({
+          verified: true,
+          planId: args.planId,
+          settlementTx: args.feeTxHash || args.txHash,
+          explorerUrl: `https://basescan.org/tx/${args.feeTxHash || args.txHash}`,
+          feePaidUsd: stored.pricing.totalFeeUsd <= 0 ? 0 : stored.pricing.operationFeeUsd,
+          plan: stored.plan,
+        });
+      }
+
+      return textError({
+        status: 402,
+        error:
+          "Set TAXRAIL_REMOTE_URL=https://api.taxrail.online for live on-chain receipt verification.",
+      });
     }
   );
 

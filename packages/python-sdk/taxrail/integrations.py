@@ -16,7 +16,7 @@ def _safe_exec(fn: Callable[..., Dict[str, Any]], **kwargs: Any) -> str:
 
 
 def get_openai_tools() -> List[Dict[str, Any]]:
-    """Return OpenAI / Responses API JSON tool definitions for TaxRail pre-trade endpoints."""
+    """Return OpenAI / Responses API JSON tool definitions for TaxRail pre-trade & 1-click execution endpoints."""
     return [
         {
             "type": "function",
@@ -110,6 +110,45 @@ def get_openai_tools() -> List[Dict[str, Any]]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "taxrail_prepare_execution",
+                "description": (
+                    "FREE $0-upfront builder: returns ready-to-sign 0x v2 swap or Aave v3 atomic borrow batch "
+                    "paying TaxRail's exact 10% verified-savings fee directly out of the operation."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "plan_id": {"type": "string"},
+                        "taker_address": {"type": "string"},
+                        "buy_asset": {"type": "string"},
+                        "borrower_address": {"type": "string"},
+                    },
+                    "required": ["plan_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "taxrail_claim_dossier",
+                "description": (
+                    "Verify settled swap or Aave borrow txHash on-chain and unlock SpecID lots + "
+                    "IRS Form 8949 / Brazil DeCripto CSV dossier ($0 upfront)."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "plan_id": {"type": "string"},
+                        "tx_hash": {"type": "string"},
+                        "chain": {"type": "string", "enum": ["base", "ethereum", "arbitrum"]},
+                    },
+                    "required": ["plan_id", "tx_hash"],
+                },
+            },
+        },
     ]
 
 
@@ -137,6 +176,16 @@ def _build_callable_specs(client: TaxRailClient) -> List[Dict[str, Any]]:
             "name": "taxrail_br_35k_status",
             "description": "$0.005 x402 Brazil R$35k monthly exemption & Lei 14.754 check.",
             "func": lambda **kwargs: _safe_exec(client.br_35k_status, **kwargs),
+        },
+        {
+            "name": "taxrail_prepare_execution",
+            "description": "FREE $0-upfront builder returning 0x v2 / Aave v3 calldata with 10% fee paid from operation.",
+            "func": lambda **kwargs: _safe_exec(client.prepare_execution, **kwargs),
+        },
+        {
+            "name": "taxrail_claim_dossier",
+            "description": "Verify on-chain operation txHash and unlock SpecID lots + Form 8949 / DeCripto CSV.",
+            "func": lambda **kwargs: _safe_exec(client.claim_dossier, **kwargs),
         },
     ]
 

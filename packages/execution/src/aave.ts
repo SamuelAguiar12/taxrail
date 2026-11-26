@@ -1,4 +1,4 @@
-import type { AaveActionPayload } from "@taxrail/shared";
+import type { AaveActionPayload, AaveBatchCall } from "@taxrail/shared";
 import { encodeFunctionData, getAddress, isAddress, parseAbi, parseUnits } from "viem";
 
 export type AaveSupportedChain = "base" | "ethereum" | "arbitrum";
@@ -95,6 +95,11 @@ export const AAVE_V3_POOL_ABI = parseAbi([
   "function borrow(address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode, address onBehalfOf)",
 ]);
 
+export const ERC20_ABI = parseAbi([
+  "function approve(address spender, uint256 amount)",
+  "function transfer(address to, uint256 amount)",
+]);
+
 const VARIABLE_INTEREST_RATE_MODE = 2n;
 const DEFAULT_REFERRAL_CODE = 0;
 
@@ -154,8 +159,8 @@ function toFixedDecimalString(value: number, decimals: number): string {
 }
 
 /**
- * Builds Aave v3 supply() and variable-rate borrow() calldata payloads for
- * Base, Ethereum, or Arbitrum without requiring Node-specific APIs.
+ * Builds Aave v3 approve/supply, variable-rate borrow() (including optional 10% TaxRail fee
+ * paid directly out of the borrowed USDC), and atomic batch call list for Base, Ethereum, or Arbitrum.
  */
 export function buildAaveBorrowPayload(params: {
   chain: AaveSupportedChain;
@@ -163,6 +168,9 @@ export function buildAaveBorrowPayload(params: {
   collateralAsset: string;
   collateralAmount: number;
   borrowAmountUsd: number;
+  feeAmountUsd?: number;
+  treasuryWallet?: string;
+  affiliateWallet?: string;
 }): AaveActionPayload {
   const { chain, collateralAsset, collateralAmount, borrowAmountUsd } = params;
 
@@ -187,9 +195,18 @@ export function buildAaveBorrowPayload(params: {
 
   const borrowToken = EVM_TOKEN_REGISTRY[chain].USDC;
   const onBehalfOf = resolveBorrowerAddress(params.borrowerAddress);
+  const netLiquidityUsd = Number(borrowAmountUsd.toFixed(2));
+  const rawFeeUsd =
+    params.feeAmountUsd !== undefined && Number.isFinite(params.feeAmountUsd)
+      ? Math.max(0, Number(params.feeAmountUsd.toFixed(2)))
+      : 0;
+
+  const hasValidTreasury = Boolean(params.treasuryWallet && isAddress(params.treasuryWallet.trim()));
+  const feePaidFromBorrowUsd = hasValidTreasury ? rawFeeUsd : 0;
+  const totalBorrowAmountUsd = Number((netLiquidityUsd + feePaidFromBorrowUsd).toFixed(2));
 
   const borrowUnits = parseUnits(
-    toFixedDecimalString(borrowAmountUsd, borrowToken.decimals),
+    toFixedDecimalString(totalBorrowAmountUsd, borrowToken.decimals),
     borrowToken.decimals
   );
 
@@ -205,23 +222,38 @@ export function buildAaveBorrowPayload(params: {
     ],
   });
 
-  const payload: AaveActionPayload = {
-    protocol: "aave_v3",
-    chain,
-    poolAddress,
-    borrowTransaction: {
-      to: poolAddress,
-      data: borrowData,
-      value: "0",
-      description: `Borrow ${borrowAmountUsd.toFixed(2)} USDC at variable rate from Aave v3 on ${chain} for ${onBehalfOf}`,
-    },
+  const borrowTransaction: AaveBatchCall = {
+    to: poolAddress,
+    data: borrowData,
+    value: "0",
+    description:
+      feePaidFromBorrowUsd > 0
+        ? `Borrow ${totalBorrowAmountUsd.toFixed(2)} USDC (${netLiquidityUsd.toFixed(2)} net + ${feePaidFromBorrowUsd.toFixed(2)} TaxRail fee) at variable rate from Aave v3 on ${chain}`
+        : `Borrow ${netLiquidityUsd.toFixed(2)} USDC at variable rate from Aave v3 on ${chain} for ${onBehalfOf}`,
   };
+
+  const atomicBatchCalls: AaveBatchCall[] = [];
+  let approveCollateralTransaction: AaveBatchCall | undefined;
+  let supplyTransaction: AaveBatchCall | undefined;
 
   if (collateralAmount > 0) {
     const supplyUnits = parseUnits(
       toFixedDecimalString(collateralAmount, collateralToken.decimals),
       collateralToken.decimals
     );
+
+    const approveData = encodeFunctionData({
+      abi: ERC20_ABI,
+      functionName: "approve",
+      args: [poolAddress, supplyUnits],
+    });
+
+    approveCollateralTransaction = {
+      to: collateralToken.address,
+      data: approveData,
+      value: "0",
+      description: `Approve ${collateralAmount} ${collateralToken.symbol} for Aave v3 Pool on ${chain}`,
+    };
 
     const supplyData = encodeFunctionData({
       abi: AAVE_V3_POOL_ABI,
@@ -234,12 +266,116 @@ export function buildAaveBorrowPayload(params: {
       ],
     });
 
-    payload.supplyTransaction = {
+    supplyTransaction = {
       to: poolAddress,
       data: supplyData,
       value: "0",
       description: `Supply ${collateralAmount} ${collateralToken.symbol} collateral to Aave v3 on ${chain} on behalf of ${onBehalfOf}`,
     };
+
+    atomicBatchCalls.push(approveCollateralTransaction, supplyTransaction);
+  }
+
+  atomicBatchCalls.push(borrowTransaction);
+
+  const payload: AaveActionPayload = {
+    protocol: "aave_v3",
+    chain,
+    poolAddress,
+    netLiquidityUsd,
+    feePaidFromBorrowUsd,
+    totalBorrowAmountUsd,
+    ...(approveCollateralTransaction ? { approveCollateralTransaction } : {}),
+    ...(supplyTransaction ? { supplyTransaction } : {}),
+    borrowTransaction,
+    atomicBatchCalls,
+  };
+
+  if (feePaidFromBorrowUsd > 0 && params.treasuryWallet && isAddress(params.treasuryWallet.trim())) {
+    const treasury = getAddress(params.treasuryWallet.trim());
+    const totalFeeUnits = parseUnits(
+      toFixedDecimalString(feePaidFromBorrowUsd, borrowToken.decimals),
+      borrowToken.decimals
+    );
+
+    const trimmedAff = params.affiliateWallet?.trim();
+    const hasValidAffiliate = Boolean(
+      trimmedAff &&
+        isAddress(trimmedAff) &&
+        getAddress(trimmedAff).toLowerCase() !== treasury.toLowerCase()
+    );
+
+    if (hasValidAffiliate && trimmedAff) {
+      const affiliate = getAddress(trimmedAff);
+      const affiliateUnits = (totalFeeUnits * 20n) / 100n;
+      const treasuryUnits = totalFeeUnits - affiliateUnits;
+      const affiliateUsd = Number(((feePaidFromBorrowUsd * 20) / 100).toFixed(2));
+      const treasuryUsd = Number((feePaidFromBorrowUsd - affiliateUsd).toFixed(2));
+
+      if (treasuryUnits > 0n) {
+        const feeTransferTx = {
+          to: borrowToken.address,
+          data: encodeFunctionData({
+            abi: ERC20_ABI,
+            functionName: "transfer",
+            args: [treasury, treasuryUnits],
+          }),
+          value: "0" as const,
+          amountUsd: treasuryUsd,
+          recipient: treasury,
+          description: `Transfer ${treasuryUsd.toFixed(2)} USDC TaxRail fee (80% treasury) from borrowed liquidity`,
+        };
+        payload.feeTransferTransaction = feeTransferTx;
+        atomicBatchCalls.push({
+          to: feeTransferTx.to,
+          data: feeTransferTx.data,
+          value: "0",
+          description: feeTransferTx.description,
+        });
+      }
+
+      if (affiliateUnits > 0n) {
+        const affTransferTx = {
+          to: borrowToken.address,
+          data: encodeFunctionData({
+            abi: ERC20_ABI,
+            functionName: "transfer",
+            args: [affiliate, affiliateUnits],
+          }),
+          value: "0" as const,
+          amountUsd: affiliateUsd,
+          recipient: affiliate,
+          description: `Transfer ${affiliateUsd.toFixed(2)} USDC affiliate share (20%) from borrowed liquidity`,
+        };
+        payload.affiliateFeeTransferTransaction = affTransferTx;
+        atomicBatchCalls.push({
+          to: affTransferTx.to,
+          data: affTransferTx.data,
+          value: "0",
+          description: affTransferTx.description,
+        });
+      }
+    } else if (totalFeeUnits > 0n) {
+      const feeTransferTx = {
+        to: borrowToken.address,
+        data: encodeFunctionData({
+          abi: ERC20_ABI,
+          functionName: "transfer",
+          args: [treasury, totalFeeUnits],
+        }),
+        value: "0" as const,
+        amountUsd: feePaidFromBorrowUsd,
+        recipient: treasury,
+        description: `Transfer ${feePaidFromBorrowUsd.toFixed(2)} USDC TaxRail fee (10% of verified tax savings) from borrowed liquidity`,
+      };
+      payload.feeTransferTransaction = feeTransferTx;
+      atomicBatchCalls.push({
+        to: feeTransferTx.to,
+        data: feeTransferTx.data,
+        value: "0",
+        description: feeTransferTx.description,
+      });
+    }
   }
 
   return payload;

@@ -75,13 +75,21 @@ export type CheckTaxImpactRequest = Omit<
 
 export interface DynamicPricingQuote {
   taxSavedUsd: number;
-  /** Fee rate on verified tax savings (0.05..0.15; default 0.10) */
+  /** Fee rate on verified tax savings (guaranteed >= 0.10 = 10% across tiers) */
   feeRatePct: number;
   totalFeeUsd: number;
-  /** Upfront USDC payment required via HTTP 402 (capped at $50 guardrail -> $10 + swap bps) */
+  /** How TaxRail collects the 10% verified-savings fee */
+  settlementMode: "PAY_FROM_OPERATION" | "UPFRONT_X402" | "FREE";
+  /** True when the operation can pay 100% of TaxRail's fee from swap/borrow proceeds ($0 upfront) */
+  zeroUpfrontAvailable: boolean;
+  /** Exact USD fee collected directly from the on-chain swap output or Aave borrowed USDC */
+  operationFeeUsd: number;
+  /** Upfront USDC payment required via HTTP 402 fallback (used for non-onchain dossiers or x402-only unlock) */
   upfrontX402Usd: number;
-  /** Remaining fee embedded as Partner/Integrator fee in swap calldata (0..100 bps) */
+  /** Fee embedded as Partner/Integrator fee in swap calldata (0..1000 bps = up to 10%) */
   embeddedSwapFeeBps: number;
+  /** Exact parts-per-million fee embedded in 0x v2 calldata (0..100000 ppm = up to 10%) */
+  embeddedSwapFeePpm: number;
   /** Equivalent USD value of embedded swap fee */
   embeddedSwapFeeUsd: number;
   /** Any excess savings fee beyond swap cap that requires enterprise settlement */
@@ -105,6 +113,15 @@ export interface CheckTaxImpactRedactedResponse {
   taxSavedUsd: number;
   pricing: DynamicPricingQuote;
   warnings: string[];
+  zeroUpfrontExecution?: {
+    tool: "prepare_execution";
+    endpoint: "/api/v1/prepare-execution";
+    claimEndpoint: "/api/v1/claim-dossier";
+    planId: string;
+    upfrontPaymentRequiredUsd: 0;
+    feePaidFromOperationUsd: number;
+    feeRatePct: number;
+  };
   nextAction: {
     tool: "unlock_tax_plan";
     endpoint: "/api/v1/unlock-plan";
@@ -147,6 +164,8 @@ export interface SwapIntentPayload {
   buyAsset: string;
   sellAmountDecimal: string;
   integratorFeeBps: number;
+  integratorFeePpm?: number;
+  multiRecipientSplit?: boolean;
   feeRecipients: Array<{
     recipient: string;
     shareBps: number;
@@ -157,22 +176,31 @@ export interface SwapIntentPayload {
   liveQuote?: Record<string, unknown>;
 }
 
+export interface AaveBatchCall {
+  to: string;
+  data: `0x${string}`;
+  value: "0";
+  description: string;
+}
+
+export interface AaveFeeTransferTransaction extends AaveBatchCall {
+  amountUsd: number;
+  recipient: string;
+}
+
 export interface AaveActionPayload {
   protocol: "aave_v3";
   chain: "base" | "ethereum" | "arbitrum";
   poolAddress: string;
-  supplyTransaction?: {
-    to: string;
-    data: `0x${string}`;
-    value: "0";
-    description: string;
-  };
-  borrowTransaction: {
-    to: string;
-    data: `0x${string}`;
-    value: "0";
-    description: string;
-  };
+  netLiquidityUsd: number;
+  feePaidFromBorrowUsd: number;
+  totalBorrowAmountUsd: number;
+  approveCollateralTransaction?: AaveBatchCall;
+  supplyTransaction?: AaveBatchCall;
+  borrowTransaction: AaveBatchCall;
+  feeTransferTransaction?: AaveFeeTransferTransaction;
+  affiliateFeeTransferTransaction?: AaveFeeTransferTransaction;
+  atomicBatchCalls: AaveBatchCall[];
 }
 
 export interface AccountingDossier {
@@ -376,6 +404,59 @@ export interface PreTradeCheckResult {
   warnings: string[];
   agentGuidance: string;
   disclaimer: string;
+}
+
+export interface PrepareExecutionInput {
+  planId: string;
+  takerAddress?: string;
+  buyAsset?: string;
+  borrowerAddress?: string;
+}
+
+export interface PrepareExecutionResponse {
+  planId: string;
+  planType: "CRYPTO_DISPOSAL" | "BORROW_VS_SELL";
+  chain: SupportedChain;
+  settlementMode: "PAY_FROM_OPERATION" | "FREE";
+  upfrontCostUsd: 0;
+  feePaidFromOperationUsd: number;
+  feeRatePct: number;
+  taxSavedUsd: number;
+  clientNetBenefitUsd: number;
+  roiMultiple: number;
+  treasuryWallet: string;
+  affiliateWallet?: string;
+  affiliateShareUsd: number;
+  executionPayload: {
+    type: "SWAP_0X_V2" | "SWAP_JUPITER" | "AAVE_V3_BORROW_BATCH";
+    swapIntent?: SwapIntentPayload;
+    aaveActions?: AaveActionPayload;
+    expectedFeeTokenAddress?: string;
+    expectedTreasuryFeeAtomic?: string;
+  };
+  nextAction: {
+    tool: "claim_dossier";
+    endpoint: "/api/v1/claim-dossier";
+    planId: string;
+    instruction: string;
+  };
+  disclaimer: string;
+}
+
+export interface ClaimDossierInput {
+  planId: string;
+  txHash: string;
+  chain?: "base" | "ethereum" | "arbitrum";
+  feeTxHash?: string;
+}
+
+export interface ClaimDossierResponse {
+  verified: true;
+  planId: string;
+  settlementTx: string;
+  explorerUrl: string;
+  feePaidUsd: number;
+  plan: FullTaxOptimizationPlan;
 }
 
 export interface Br35kStatusResult {

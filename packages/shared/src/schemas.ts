@@ -135,3 +135,30 @@ export const DeductibleExpenseInputSchema = z.object({
 export const UnlockPlanInputSchema = z.object({
   planId: z.string().min(1),
 });
+
+export const PrepareExecutionInputSchema = z.object({
+  planId: z.string().min(1),
+  takerAddress: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/, "takerAddress must be a valid 0x EVM address")
+    .optional(),
+  buyAsset: z.string().min(1).optional(),
+  borrowerAddress: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/, "borrowerAddress must be a valid 0x EVM address")
+    .optional(),
+});
+
+export const ClaimDossierInputSchema = z.object({
+  planId: z.string().min(1),
+  txHash: z
+    .string()
+    .trim()
+    .regex(/^0x[a-fA-F0-9]{64}$/, "txHash must be a valid 32-byte 0x transaction hash"),
+  chain: z.enum(["base", "ethereum", "arbitrum"]).optional(),
+  feeTxHash: z
+    .string()
+    .trim()
+    .regex(/^0x[a-fA-F0-9]{64}$/, "feeTxHash must be a valid 32-byte 0x transaction hash")
+    .optional(),
+});

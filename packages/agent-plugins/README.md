@@ -30,6 +30,15 @@ const preview = await taxRail.checkTaxImpact({
   walletAddress: "0x0202e70990d90325A1Dca322C91471Be774E4B6f",
 });
 
+// $0-upfront 1-click execution (10% savings fee paid directly from operation proceeds)
+const exec = await taxRail.prepareExecution({
+  planId: preview.planId,
+  takerAddress: "0xYourWallet",
+  buyAsset: "wstETH",
+});
+// Broadcast exec.executionPayload.swapIntent.liveQuote.transaction, then claim CSV dossier:
+// const dossier = await taxRail.claimDossier({ planId: preview.planId, txHash: "0x...", chain: "base" });
+
 // Or $0.01 USDC instant wallet TLH risk scan (returns x402 402 challenge until paid)
 const scan = await taxRail.scanWalletTlh({
   walletAddress: "0x0202e70990d90325A1Dca322C91471Be774E4B6f",
