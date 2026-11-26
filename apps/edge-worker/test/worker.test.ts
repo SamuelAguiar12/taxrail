@@ -33,13 +33,20 @@ describe("TaxRail Edge Worker", () => {
       expect(body.service).toBe("taxrail-edge");
     });
 
-    it("serves GET /.well-known/agent.json with A2A card, dynamic x402, and affiliate program", async () => {
+    it("serves GET /.well-known/agent.json and /.well-known/agent-card.json with A2A card, dynamic x402, and affiliate program", async () => {
       const res = await app.request("/.well-known/agent.json", undefined, testEnv);
       expect(res.status).toBe(200);
       const card = (await res.json()) as Record<string, unknown>;
       expect(card.name).toBe("TaxRail");
       expect(card.jurisdictions).toEqual(["US", "BR"]);
       expect((card.pricing as Record<string, unknown>).protocol).toBe("x402");
+
+      const resAlias = await app.request("/.well-known/agent-card.json", undefined, testEnv);
+      expect(resAlias.status).toBe(200);
+      const cardAlias = (await resAlias.json()) as Record<string, unknown>;
+      expect(cardAlias.name).toBe("TaxRail");
+      expect(cardAlias.skills).toHaveLength(5);
+
       expect((card.affiliateProgram as Record<string, unknown>).revsharePct).toBe(0.2);
       expect(Array.isArray(card.skills)).toBe(true);
       expect((card.skills as unknown[]).length).toBe(5);

@@ -189,6 +189,10 @@ export function createApp(): Hono<{ Bindings: Env }> {
     return c.json(buildAgentCard(c.env, c.req.url));
   });
 
+  app.get("/.well-known/agent-card.json", (c) => {
+    return c.json(buildAgentCard(c.env, c.req.url));
+  });
+
   app.get("/llms.txt", (c) => {
     return c.text(buildLlmsTxt(c.env, c.req.url), 200, {
       "Content-Type": "text/plain; charset=utf-8",
