@@ -9,7 +9,7 @@ const testEnv: Env = {
   PAY_TO_ADDRESS: "0x0000000000000000000000000000000000000001",
   X402_NETWORK: "eip155:8453",
   X402_ASSET: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  FACILITATOR_URL: "https://x402.org/facilitator",
+  FACILITATOR_URL: "https://facilitator.payai.network",
   PUBLIC_BASE_URL: "https://api.taxrail.online",
   X402_DEV_BYPASS_TOKEN: TEST_BYPASS_TOKEN,
 };
