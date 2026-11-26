@@ -216,6 +216,11 @@
         Pre-execution crypto &amp; corporate tax optimization across the <strong>United States</strong> (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) and <strong>Brazil</strong> (Lei 14.754, R$35k rule, Lucro Real, IBS/CBS). Scan up to <strong>25 volatile tokens</strong> for $0.01 USDC, optimize in 1 call for $0.10, or simulate free and pay <strong>10% only on verified tax savings</strong>.
       </p>
 
+      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:22px;">
+        <a href="#free-calculator" class="btn btn-primary" style="text-decoration:none;">Calculate My 2026 Tax Savings Free ↓</a>
+        <a href="#free-calculator" class="btn" style="text-decoration:none;" onclick="switchCalcTab('manual'); runManualTradeCalc();">Try Instant HIFO Savings Demo →</a>
+      </div>
+
       <div class="copy-grid">
         <div class="copy-box">
           <div>
@@ -262,8 +267,9 @@
 
       <div class="calc-tabs">
         <button class="calc-tab active" data-tab="wallet" onclick="switchCalcTab('wallet')">1. Wallet Tax &amp; HIFO Scanner</button>
-        <button class="calc-tab" data-tab="br35k" onclick="switchCalcTab('br35k')">2. Brazil R$35k &amp; Lei 14.754</button>
-        <button class="calc-tab" data-tab="borrow" onclick="switchCalcTab('borrow')">3. Aave v3 Borrow vs. Sell</button>
+        <button class="calc-tab" data-tab="manual" onclick="switchCalcTab('manual')">2. Manual HIFO Trade</button>
+        <button class="calc-tab" data-tab="br35k" onclick="switchCalcTab('br35k')">3. Brazil R$35k &amp; Lei 14.754</button>
+        <button class="calc-tab" data-tab="borrow" onclick="switchCalcTab('borrow')">4. Aave v3 Borrow vs. Sell</button>
       </div>
 
       <div id="tab-wallet">
@@ -299,6 +305,42 @@
         <div class="calc-actions">
           <button class="btn btn-primary" onclick="runFreeWalletScan()">Scan Wallet Savings Free</button>
           <button class="btn" onclick="document.getElementById('cw-addr').value='0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1'; runFreeWalletScan();">Try Sample Base Wallet</button>
+          <button class="btn" onclick="switchCalcTab('manual'); runManualTradeCalc();">Try Sample HIFO Trade (Real Savings)</button>
+        </div>
+      </div>
+
+      <div id="tab-manual" style="display:none;">
+        <div class="calc-grid">
+          <div class="field">
+            <label for="mt-asset">Asset</label>
+            <input id="mt-asset" type="text" value="ETH" />
+          </div>
+          <div class="field">
+            <label for="mt-qty">Sell Qty</label>
+            <input id="mt-qty" type="number" step="0.01" min="0.001" value="2" />
+          </div>
+          <div class="field">
+            <label for="mt-spot">Spot Price (USD)</label>
+            <input id="mt-spot" type="number" step="10" min="1" value="3200" />
+          </div>
+          <div class="field">
+            <label for="mt-early">Oldest Lot Basis (USD)</label>
+            <input id="mt-early" type="number" step="10" min="0" value="1100" />
+          </div>
+          <div class="field">
+            <label for="mt-recent">Recent Lot Basis (USD)</label>
+            <input id="mt-recent" type="number" step="10" min="0" value="2950" />
+          </div>
+          <div class="field">
+            <label for="mt-jur">Jurisdiction</label>
+            <select id="mt-jur">
+              <option value="US" selected>US (IRS 1099-DA)</option>
+              <option value="BR">Brazil (Lei 14.754)</option>
+            </select>
+          </div>
+        </div>
+        <div class="calc-actions">
+          <button class="btn btn-primary" onclick="runManualTradeCalc()">Simulate HIFO vs. FIFO Free</button>
         </div>
       </div>
 
@@ -693,7 +735,7 @@
     window.__unlockedTaxRailPlan = null;
 
     function switchCalcTab(tab) {
-      ["wallet", "br35k", "borrow"].forEach((id) => {
+      ["wallet", "manual", "br35k", "borrow"].forEach((id) => {
         document.getElementById(`tab-${id}`).style.display = id === tab ? "block" : "none";
       });
       document.querySelectorAll(".calc-tab").forEach((btn) => {
@@ -1047,6 +1089,81 @@
             `$${Number(data.pricing?.upfrontX402Usd ?? 0).toFixed(2)}`,
           ],
           data.agentGuidance || "Simulation complete.",
+          unlockCmd,
+          data.planId
+            ? {
+                planId: data.planId,
+                upfrontX402Usd: Number(data.pricing?.upfrontX402Usd ?? 0),
+                taxSavedUsd: Number(data.taxSavedUsd ?? 0),
+              }
+            : null
+        );
+      } catch (err) {
+        summary.textContent = `Request failed: ${err}`;
+      }
+    }
+
+    async function runManualTradeCalc() {
+      const asset = document.getElementById("mt-asset").value.trim().toUpperCase() || "ETH";
+      const qty = Math.max(0.0001, Number(document.getElementById("mt-qty").value || 2));
+      const spot = Math.max(0.01, Number(document.getElementById("mt-spot").value || 3200));
+      const early = Math.max(0, Number(document.getElementById("mt-early").value || 1100));
+      const recent = Math.max(0, Number(document.getElementById("mt-recent").value || 2950));
+      const jur = document.getElementById("mt-jur").value;
+      const summary = document.getElementById("calc-summary");
+      summary.textContent = `Simulating HIFO vs. FIFO tax impact for ${qty} ${asset}...`;
+      document.getElementById("calc-unlock-bar").style.display = "none";
+
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/check-tax-impact`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jurisdiction: jur,
+            regime: jur === "BR" ? "PF_LEI_14754" : "INDIVIDUAL",
+            chain: "base",
+            targetAsset: asset,
+            sellQuantity: qty,
+            currentPriceUsd: spot,
+            targetQuoteAsset: "USDC",
+            asOfDate: "2026-11-26T00:00:00Z",
+            lots: [
+              {
+                lotId: "fifo-early",
+                asset,
+                quantity: qty,
+                costBasisUsd: early,
+                acquiredAt: "2023-03-01T00:00:00Z",
+                custodyLocation: jur === "BR" ? "OFFSHORE" : "SELF_CUSTODY",
+              },
+              {
+                lotId: "spec-recent",
+                asset,
+                quantity: qty,
+                costBasisUsd: recent,
+                acquiredAt: "2025-02-01T00:00:00Z",
+                custodyLocation: jur === "BR" ? "OFFSHORE" : "SELF_CUSTODY",
+              },
+            ],
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          summary.textContent = `Check returned ${res.status}: ${data.error || "Invalid trade parameters"}`;
+          return;
+        }
+        const unlockCmd = data.planId
+          ? `curl -X POST ${API_BASE}/api/v1/unlock-plan -H "Content-Type: application/json" -d '{"planId":"${data.planId}"}'`
+          : null;
+        setCalcResult(
+          ["Naive FIFO Tax", "TaxRail HIFO Tax", "Verified Saved", "Unlock Fee (10%)"],
+          [
+            `$${Number(data.baselineTaxUsd ?? 0).toFixed(2)}`,
+            `$${Number(data.optimizedTaxUsd ?? 0).toFixed(2)}`,
+            `$${Number(data.taxSavedUsd ?? 0).toFixed(2)}`,
+            `$${Number(data.pricing?.upfrontX402Usd ?? 0).toFixed(2)}`,
+          ],
+          data.agentGuidance || "Manual HIFO simulation complete.",
           unlockCmd,
           data.planId
             ? {

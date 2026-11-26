@@ -1244,5 +1244,11 @@ describe("TaxRail Edge Worker", () => {
       );
       expect(rep.verifiedReviews[0]?.comment).toContain("Saved $125");
     });
+
+    it("redirects GET requests ending with trailing backtick (%60) to the clean URL", async () => {
+      const res = await app.request("/openapi.json%60", undefined, testEnv);
+      expect(res.status).toBe(301);
+      expect(res.headers.get("location")).toBe("http://localhost/openapi.json");
+    });
   });
 });

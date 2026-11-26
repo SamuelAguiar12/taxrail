@@ -135,12 +135,12 @@ export function buildLlmsTxt(env: Env, requestUrl?: string): string {
 ## 2-Step Agent Funnel (Free Preview -> Paid Unlock via x402)
 
 1. **Step 1 — FREE Preview (No Payment Required)**
-   - Call \`POST ${baseUrl}/api/v1/check-tax-impact\`, \`POST ${baseUrl}/api/v1/borrow-vs-sell\`, or \`POST ${baseUrl}/api/v1/classify-expense\` (or MCP tools \`check_tax_impact\`, \`compare_borrow_vs_sell\`, \`classify_deductible_expense\`).
+   - Call POST ${baseUrl}/api/v1/check-tax-impact, POST ${baseUrl}/api/v1/borrow-vs-sell, or POST ${baseUrl}/api/v1/classify-expense (or MCP tools \`check_tax_impact\`, \`compare_borrow_vs_sell\`, \`classify_deductible_expense\`).
    - Receive exact \`baselineTaxUsd\`, \`optimizedTaxUsd\`, \`taxSavedUsd\`, dynamic \`pricing\` quote, and a \`planId\` (TTL: 15 minutes).
    - Sensitive execution details (exact \`lotId\`s, swap/Aave calldata, and accounting exports) are redacted until Step 2.
 
 2. **Step 2 — Unlock Full Execution Plan (x402 v2 Dynamic Pricing)**
-   - Call \`POST ${baseUrl}/api/v1/unlock-plan\` with \`{ "planId": "..." }\` (or MCP tool \`unlock_tax_plan\`).
+   - Call POST ${baseUrl}/api/v1/unlock-plan with \`{ "planId": "..." }\` (or MCP tool \`unlock_tax_plan\`).
    - If \`pricing.upfrontX402Usd == 0\` (e.g., $0 verified tax savings), the plan unlocks immediately for FREE.
    - Otherwise, the worker responds with **HTTP 402 Payment Required** and a \`PAYMENT-REQUIRED\` header for Base USDC (\`${network}\`) equal to **10% of verified tax savings** (capped by the $50 upfront x402 guardrail, with any balance embedded as swap integrator bps).
    - Retry with \`X-PAYMENT\` or \`PAYMENT-SIGNATURE\` header to receive:
@@ -163,20 +163,20 @@ Pass \`referrerWallet\` (e.g., \`"0xYourAgentWallet"\`) in any Step 1 request to
 
 ## Endpoints & Specs
 
-- **Portable Agent Skill (\`SKILL.md\`):** \`${baseUrl}/SKILL.md\`
-- **MCP Streamable HTTP:** \`${baseUrl}/mcp\` (\`npx -y taxrail-mcp\`)
+- **Portable Agent Skill (\`SKILL.md\`):** ${baseUrl}/SKILL.md
+- **MCP Streamable HTTP:** ${baseUrl}/mcp (\`npx -y taxrail-mcp\`)
 - **TypeScript Agent SDK:** \`npm install taxrail-agent-tools\`
 - **Python Agent SDK (Zero-Deps + LangChain/CrewAI):** \`pip install taxrail\`
-- **A2A Agent Card:** \`${baseUrl}/.well-known/agent.json\`
-- **x402 Discovery Manifest:** \`${baseUrl}/.well-known/x402\`
-- **OpenAPI 3.1 Spec:** \`${baseUrl}/openapi.json\`
-- **$0.01 Wallet TLH Scanner (1-param GET):** \`GET ${baseUrl}/api/v1/x402/tlh-scan?walletAddress=0x...&chain=base\`
-- **$0.01 Pre-Trade Swap/Sell Guardrail:** \`GET ${baseUrl}/api/v1/x402/pre-trade-check?walletAddress=0x...&sellAsset=ETH&sellAmount=1\`
-- **$0.005 Brazil R$35k & Lei 14.754 Check:** \`GET ${baseUrl}/api/v1/x402/br-35k-status?monthlySalesBrl=20000&plannedSaleUsd=2500&custodyLocation=DOMESTIC\`
-- **1-Step Paid Optimize ($0.10 USDC):** \`POST ${baseUrl}/api/v1/x402/optimize\`
-- **Agent Feedback (FREE):** \`POST ${baseUrl}/api/v1/feedback\`
-- **Verified Reputation (FREE):** \`GET ${baseUrl}/api/v1/reputation\`
-- **Health Check:** \`${baseUrl}/health\`
+- **A2A Agent Card:** ${baseUrl}/.well-known/agent.json
+- **x402 Discovery Manifest:** ${baseUrl}/.well-known/x402
+- **OpenAPI 3.1 Spec:** ${baseUrl}/openapi.json
+- **$0.01 Wallet TLH Scanner (1-param GET):** ${baseUrl}/api/v1/x402/tlh-scan?walletAddress=0x...&chain=base
+- **$0.01 Pre-Trade Swap/Sell Guardrail:** ${baseUrl}/api/v1/x402/pre-trade-check?walletAddress=0x...&sellAsset=ETH&sellAmount=1
+- **$0.005 Brazil R$35k & Lei 14.754 Check:** ${baseUrl}/api/v1/x402/br-35k-status?monthlySalesBrl=20000&plannedSaleUsd=2500&custodyLocation=DOMESTIC
+- **1-Step Paid Optimize ($0.10 USDC):** ${baseUrl}/api/v1/x402/optimize
+- **Agent Feedback (FREE):** ${baseUrl}/api/v1/feedback
+- **Verified Reputation (FREE):** ${baseUrl}/api/v1/reputation
+- **Health Check:** ${baseUrl}/health
 
 ## Copy-Paste Agent Quickstart
 
@@ -242,14 +242,14 @@ Always include \`referrerWallet\` (query parameter or JSON field) or \`X-TaxRail
 
 ## Agent Installation
 
-- **MCP (Streamable HTTP):** \`${baseUrl}/mcp\`
+- **MCP (Streamable HTTP):** ${baseUrl}/mcp
 - **MCP (npx stdio):** \`npx -y taxrail-mcp\`
 - **TypeScript / AgentKit / LangChain SDK:** \`npm install taxrail-agent-tools\`
 - **Python SDK (LangChain / CrewAI / OpenAI):** \`pip install taxrail\`
-- **OpenAPI 3.1 Spec:** \`${baseUrl}/openapi.json\`
-- **x402 Discovery Manifest:** \`${baseUrl}/.well-known/x402\`
-- **Submit Agent Feedback (FREE):** \`POST ${baseUrl}/api/v1/feedback\` (include \`planId\` or \`settlementTx\` for verified-payer badge)
-- **Verified Public Reputation (FREE):** \`GET ${baseUrl}/api/v1/reputation\`
+- **OpenAPI 3.1 Spec:** ${baseUrl}/openapi.json
+- **x402 Discovery Manifest:** ${baseUrl}/.well-known/x402
+- **Submit Agent Feedback (FREE):** ${baseUrl}/api/v1/feedback (include \`planId\` or \`settlementTx\` for verified-payer badge)
+- **Verified Public Reputation (FREE):** ${baseUrl}/api/v1/reputation
 `;
 }
 

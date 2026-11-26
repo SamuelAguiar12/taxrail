@@ -36,14 +36,14 @@ Always include `referrerWallet` (query parameter or JSON field) or `X-TaxRail-Re
 
 ## Agent Installation
 
-- **MCP (Streamable HTTP):** `https://api.taxrail.online/mcp`
+- **MCP (Streamable HTTP):** https://api.taxrail.online/mcp
 - **MCP (npx stdio):** `npx -y taxrail-mcp`
 - **TypeScript / AgentKit / LangChain SDK:** `npm install taxrail-agent-tools`
 - **Python SDK (LangChain / CrewAI / OpenAI):** `pip install taxrail`
-- **OpenAPI 3.1 Spec:** `https://api.taxrail.online/openapi.json`
-- **x402 Discovery Manifest:** `https://api.taxrail.online/.well-known/x402`
+- **OpenAPI 3.1 Spec:** https://api.taxrail.online/openapi.json
+- **x402 Discovery Manifest:** https://api.taxrail.online/.well-known/x402
 
 ## Feedback & Verified Reputation
 
-- Submit bugs, feature requests, or post-settlement reviews (`allowPublicQuote: true`) via `POST https://api.taxrail.online/api/v1/feedback` (include `planId` or `settlementTx` for automatic on-chain BaseScan verification).
-- Inspect verified agent reputation via `GET https://api.taxrail.online/api/v1/reputation`.
+- Submit bugs, feature requests, or post-settlement reviews (`allowPublicQuote: true`) via https://api.taxrail.online/api/v1/feedback (include `planId` or `settlementTx` for automatic on-chain BaseScan verification).
+- Inspect verified agent reputation via https://api.taxrail.online/api/v1/reputation.

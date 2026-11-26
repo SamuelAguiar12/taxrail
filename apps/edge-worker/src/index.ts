@@ -210,6 +210,18 @@ export function createApp(): Hono<{ Bindings: Env }> {
     })
   );
 
+  // Clean trailing markdown backticks (` or %60) appended by naive link extractors
+  app.use("*", async (c, next) => {
+    if (c.req.method === "GET" || c.req.method === "HEAD") {
+      const url = new URL(c.req.url);
+      if (/(%60|`)+$/i.test(url.pathname)) {
+        url.pathname = url.pathname.replace(/(%60|`)+$/gi, "") || "/";
+        return c.redirect(url.toString(), 301);
+      }
+    }
+    return next();
+  });
+
   app.get("/", (c) => {
     const baseUrl = resolvePublicBaseUrl(c.env, c.req.url);
     return c.json({
@@ -630,6 +642,18 @@ export function createApp(): Hono<{ Bindings: Env }> {
       taxSavedUsd: result.record.pricing.taxSavedUsd,
       planId: result.record.plan.planId,
     });
+
+    console.log(
+      JSON.stringify({
+        event: "x402_unlock_plan_paid",
+        planId: result.record.plan.planId,
+        planType: result.record.plan.planType,
+        jurisdiction: result.record.plan.jurisdiction,
+        amountUsd: result.record.pricing.upfrontX402Usd,
+        taxSavedUsd: result.record.pricing.taxSavedUsd,
+        settlementTx: result.settlementTx ?? null,
+      })
+    );
 
     if (result.paymentResponseHeader) {
       c.header("PAYMENT-RESPONSE", result.paymentResponseHeader);
