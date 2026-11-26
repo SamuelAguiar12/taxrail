@@ -95,16 +95,19 @@ Add to Claude Desktop, Cursor, or any MCP-compatible agent runtime:
 ### 2. Remote MCP & REST API (Cloudflare Edge Worker)
 
 - **Remote MCP:** `POST https://api.taxrail.online/mcp`
+- **Portable Agent Skill (`SKILL.md`):** `https://api.taxrail.online/SKILL.md` (committed in [`skills/taxrail-crypto-tax/SKILL.md`](skills/taxrail-crypto-tax/SKILL.md) for OpenClaw/ClawHub, Claude Code, Codex, Cursor)
 - **REST Endpoints:**
-  - `POST /api/v1/check-tax-impact` (Free)
-  - `POST /api/v1/compare-borrow-vs-sell` (Free)
-  - `POST /api/v1/classify-deductible-expense` (Free)
-  - `POST /api/v1/unlock-plan` (x402 `USDC` on `eip155:8453`)
+  - `GET /api/v1/x402/tlh-scan?walletAddress=0x...&chain=base` (**$0.01 USDC** 1-parameter wallet TLH & tax-risk scanner via x402)
+  - `POST /api/v1/x402/optimize` (**$0.10 USDC** 1-step full optimization + calldata + dossier via x402)
+  - `POST /api/v1/check-tax-impact` (Free preview -> dynamic `unlock-plan`)
+  - `POST /api/v1/borrow-vs-sell` (Free preview -> dynamic `unlock-plan`)
+  - `POST /api/v1/classify-expense` (Free preview -> dynamic `unlock-plan`)
+  - `POST /api/v1/unlock-plan` (Dynamic x402 `USDC` on `eip155:8453`, 10% of verified tax savings)
 
-### 3. Coinbase AgentKit Plugin
+### 3. Coinbase AgentKit & SDK (`npm install taxrail-agent-tools`)
 
 ```ts
-import { TaxRailActionProvider } from "@taxrail/agent-plugins";
+import { TaxRailActionProvider } from "taxrail-agent-tools";
 
 const taxRail = new TaxRailActionProvider({
   baseUrl: "https://api.taxrail.online",
@@ -118,7 +121,7 @@ const actions = taxRail.getActions();
 
 ```ts
 import { DynamicStructuredTool } from "@langchain/core/tools";
-import { createTaxRailLangChainTools } from "@taxrail/agent-plugins";
+import { createTaxRailLangChainTools } from "taxrail-agent-tools";
 
 const tools = createTaxRailLangChainTools({
   baseUrl: "https://api.taxrail.online",

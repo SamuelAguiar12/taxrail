@@ -11,6 +11,7 @@ import {
   type DeductibleExpensePreview,
   type FullTaxOptimizationPlan,
   type PricingTier,
+  type WalletTlhScanResult,
 } from "@taxrail/shared";
 import { z } from "zod";
 
@@ -83,6 +84,14 @@ export interface TaxRailClient {
     input: DeductibleExpenseInput
   ): Promise<DeductibleExpensePreview>;
   unlockTaxPlan(input: UnlockTaxPlanActionInput): Promise<UnlockPlanResult>;
+  scanWalletTlh(params: {
+    walletAddress: string;
+    chain?: "base" | "ethereum" | "arbitrum";
+    asset?: string;
+    jurisdiction?: "US" | "BR";
+    paymentSignature?: string;
+    referrerWallet?: string;
+  }): Promise<WalletTlhScanResult | PaymentRequiredChallenge>;
 }
 
 export interface TaxRailToolSpec<TSchema extends z.ZodTypeAny, TResult> {
@@ -210,7 +219,7 @@ export function createTaxRailClient(
         withAffiliateDefaults(input, config)
       );
       return postJson<BorrowVsSellPreview>(
-        "/api/v1/compare-borrow-vs-sell",
+        "/api/v1/borrow-vs-sell",
         parsed
       );
     },
@@ -220,7 +229,7 @@ export function createTaxRailClient(
         withAffiliateDefaults(input, config)
       );
       return postJson<DeductibleExpensePreview>(
-        "/api/v1/classify-deductible-expense",
+        "/api/v1/classify-expense",
         parsed
       );
     },
@@ -247,6 +256,53 @@ export function createTaxRailClient(
         extraHeaders,
         true
       );
+    },
+
+    async scanWalletTlh(params) {
+      const qs = new URLSearchParams({
+        walletAddress: params.walletAddress,
+        ...(params.chain ? { chain: params.chain } : {}),
+        ...(params.asset ? { asset: params.asset } : {}),
+        ...(params.jurisdiction ? { jurisdiction: params.jurisdiction } : {}),
+      });
+      const referrerWallet = params.referrerWallet ?? config.referrerWallet;
+      if (referrerWallet) {
+        qs.set("referrerWallet", referrerWallet);
+      }
+
+      const endpoint = `/api/v1/x402/tlh-scan?${qs.toString()}`;
+      const response = await fetchImpl(`${baseUrl}${endpoint}`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          ...config.headers,
+          ...(referrerWallet ? { "X-TaxRail-Referrer": referrerWallet } : {}),
+          ...(params.paymentSignature
+            ? {
+                "PAYMENT-SIGNATURE": params.paymentSignature,
+                "X-PAYMENT": params.paymentSignature,
+              }
+            : {}),
+        },
+      });
+
+      const parsed = await parseResponseBody(response);
+      if (response.status === 402) {
+        return {
+          status: 402,
+          paymentRequired: true,
+          paymentHeader:
+            response.headers.get("PAYMENT-REQUIRED") ??
+            response.headers.get("X-PAYMENT-REQUIRED"),
+          body: parsed,
+          instructions:
+            "Settle the $0.01 Base USDC (eip155:8453) x402 payment and retry scanWalletTlh with paymentSignature.",
+        };
+      }
+      if (!response.ok) {
+        throw new TaxRailApiError(response.status, endpoint, parsed);
+      }
+      return parsed as WalletTlhScanResult;
     },
   };
 }

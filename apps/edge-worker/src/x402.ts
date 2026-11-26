@@ -483,15 +483,133 @@ export function buildQuickOptimizePaymentRequired(
 }
 
 /**
- * Verifies & settles the 1-step $0.10 USDC x402 payment before parsing/running the optimization.
+ * Builds the 1-parameter $0.01 USDC x402 v2 PaymentRequired challenge for `/api/v1/x402/tlh-scan`,
+ * giving autonomous agents a $0.01 instant wallet TLH & tax-risk scanner entrypoint.
  */
-export async function verifyQuickOptimizePayment(params: {
+export function buildTlhScanPaymentRequired(
+  env: Env,
+  requestUrl?: string
+): { paymentRequired: PaymentRequired; requirements: PaymentRequirements } {
+  const network = (env.X402_NETWORK || DEFAULT_X402_NETWORK) as Network;
+  const asset = env.X402_ASSET || DEFAULT_X402_ASSET;
+  const payTo = env.PAY_TO_ADDRESS || DEFAULT_PAY_TO_ADDRESS;
+  const baseUrl = resolvePublicBaseUrl(env, requestUrl);
+
+  const requirements: PaymentRequirements = {
+    scheme: "exact",
+    network,
+    asset,
+    amount: usdToUsdcAtomic(0.01),
+    payTo,
+    maxTimeoutSeconds: 300,
+    extra: {
+      name: "USD Coin",
+      version: "2",
+      pricingModel: "flat-tlh-scan-0.01",
+      affiliateRevsharePct: 0.2,
+    },
+  };
+
+  const paymentRequired: PaymentRequired = {
+    x402Version: 2,
+    error: "Payment Required",
+    resource: {
+      url: `${baseUrl}/api/v1/x402/tlh-scan`,
+      description:
+        "TaxRail $0.01 Instant Wallet Tax-Loss Harvesting (TLH) & IRS 1099-DA / Brazil Lei 14.754 Risk Scanner. Pass just a walletAddress (Base/Ethereum/Arbitrum) to scan cost-basis lots, unrealized gains/losses, HIFO/SpecID savings, and year-end TLH opportunities.",
+      mimeType: "application/json",
+    },
+    accepts: [requirements],
+    extensions: {
+      bazaar: {
+        info: {
+          input: {
+            type: "http",
+            method: "GET",
+            queryParams: {
+              walletAddress: "0x0202e70990d90325A1Dca322C91471Be774E4B6f",
+              chain: "base",
+              asset: "ETH",
+              jurisdiction: "US",
+            },
+          },
+          output: {
+            type: "json",
+            example: {
+              status: "TLH_OPPORTUNITIES_FOUND",
+              walletAddress: "0x0202e70990d90325A1Dca322C91471Be774E4B6f",
+              chain: "base",
+              asset: "ETH",
+              jurisdiction: "US",
+              lotsScanned: 3,
+              estimatedTaxSavingsUsd: 420,
+              taxRiskScore: "MEDIUM",
+              yearEndTlhDeadline: "2026-12-31",
+              planId: "plan_example_tlh",
+            },
+          },
+        },
+        schema: {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          type: "object",
+          properties: {
+            input: {
+              type: "object",
+              properties: {
+                queryParams: {
+                  type: "object",
+                  required: ["walletAddress"],
+                  properties: {
+                    walletAddress: {
+                      type: "string",
+                      description:
+                        "EVM wallet address (0x...) to scan for year-end TLH opportunities and HIFO/SpecID tax savings",
+                    },
+                    chain: {
+                      type: "string",
+                      enum: ["base", "ethereum", "arbitrum"],
+                    },
+                    asset: { type: "string" },
+                    jurisdiction: { type: "string", enum: ["US", "BR"] },
+                    regime: { type: "string" },
+                    referrerWallet: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  return { paymentRequired, requirements };
+}
+
+/**
+ * Builds the 402 header + payload for GET probes on `/api/v1/x402/tlh-scan`.
+ */
+export function buildTlhScanProbePaymentRequired(
+  env: Env,
+  requestUrl?: string
+): { paymentRequired: PaymentRequired; paymentRequiredHeader: string } {
+  const { paymentRequired } = buildTlhScanPaymentRequired(env, requestUrl);
+  return {
+    paymentRequired,
+    paymentRequiredHeader: encodePaymentRequiredHeader(paymentRequired),
+  };
+}
+
+/**
+ * Shared verifier/settler for flat-priced x402 endpoints ($0.01 TLH scan & $0.10 quick optimize).
+ */
+async function verifyFlatX402Payment(params: {
   paymentHeader?: string | null;
   env: Env;
-  requestUrl?: string;
+  paymentRequired: PaymentRequired;
+  requirements: PaymentRequirements;
 }): Promise<QuickOptimizePaymentResult> {
-  const { paymentHeader, env, requestUrl } = params;
-  const { paymentRequired, requirements } = buildQuickOptimizePaymentRequired(env, requestUrl);
+  const { paymentHeader, env, paymentRequired, requirements } = params;
   const paymentRequiredHeader = encodePaymentRequiredHeader(paymentRequired);
 
   const trimmedHeader = paymentHeader?.trim();
@@ -567,4 +685,30 @@ export async function verifyQuickOptimizePayment(params: {
       paymentRequiredHeader,
     };
   }
+}
+
+/**
+ * Verifies & settles the 1-parameter $0.01 USDC x402 payment for `/api/v1/x402/tlh-scan`.
+ */
+export async function verifyTlhScanPayment(params: {
+  paymentHeader?: string | null;
+  env: Env;
+  requestUrl?: string;
+}): Promise<QuickOptimizePaymentResult> {
+  const { paymentHeader, env, requestUrl } = params;
+  const { paymentRequired, requirements } = buildTlhScanPaymentRequired(env, requestUrl);
+  return verifyFlatX402Payment({ paymentHeader, env, paymentRequired, requirements });
+}
+
+/**
+ * Verifies & settles the 1-step $0.10 USDC x402 payment before parsing/running the optimization.
+ */
+export async function verifyQuickOptimizePayment(params: {
+  paymentHeader?: string | null;
+  env: Env;
+  requestUrl?: string;
+}): Promise<QuickOptimizePaymentResult> {
+  const { paymentHeader, env, requestUrl } = params;
+  const { paymentRequired, requirements } = buildQuickOptimizePaymentRequired(env, requestUrl);
+  return verifyFlatX402Payment({ paymentHeader, env, paymentRequired, requirements });
 }

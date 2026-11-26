@@ -113,6 +113,7 @@ export interface CheckTaxImpactRedactedResponse {
     paymentAsset: "USDC";
     paymentNetwork: "eip155:8453";
   };
+  agentGuidance?: string;
   disclaimer: string;
 }
 
@@ -221,6 +222,7 @@ export interface BorrowVsSellPreview {
   projectedLtvPct: number;
   liquidationWarning: string | null;
   pricing: DynamicPricingQuote;
+  agentGuidance?: string;
   disclaimer: string;
 }
 
@@ -255,6 +257,42 @@ export interface DeductibleExpensePreview {
   taxSavedUsd: number;
   complianceChecklist: string[];
   pricing: DynamicPricingQuote;
+  agentGuidance?: string;
+  disclaimer: string;
+}
+
+export interface WalletTlhScanResult {
+  status: "TLH_OPPORTUNITIES_FOUND" | "SCAN_READY" | "NO_ELIGIBLE_LOTS_FOUND";
+  walletAddress: string;
+  chain: "base" | "ethereum" | "arbitrum";
+  asset: string;
+  currentPriceUsd: number | null;
+  priceSource: "alchemy" | "coinbase" | "unavailable";
+  jurisdiction: Jurisdiction;
+  regime: TaxRegime;
+  lotsScanned: number;
+  totalQuantity: number;
+  unrealizedPnlUsd: number;
+  estimatedTaxSavingsUsd: number;
+  taxRiskScore: "LOW" | "MEDIUM" | "HIGH";
+  yearEndTlhDeadline: string;
+  rulesApplied: string[];
+  tlhOpportunities: Array<{
+    lotId: string;
+    acquiredAt: string;
+    quantity: number;
+    costBasisUsd: number;
+    unrealizedLossUsd: number;
+  }>;
+  planId?: string;
+  upfrontUnlockCostUsd?: number;
+  warnings: string[];
+  nextRecommendedAction: {
+    action: "UNLOCK_PLAN" | "RUN_QUICK_OPTIMIZE" | "CHECK_TAX_IMPACT";
+    endpoint: string;
+    planId?: string;
+    instruction: string;
+  };
   disclaimer: string;
 }
 

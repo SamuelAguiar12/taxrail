@@ -47,6 +47,7 @@ export function buildAgentCard(env: Env, requestUrl?: string): Record<string, un
         x402Manifest: `${baseUrl}/.well-known/x402`,
       },
       llmsTxt: `${baseUrl}/llms.txt`,
+      skillMd: `${baseUrl}/SKILL.md`,
     },
     pricing: {
       model: "dynamic-success-fee",
@@ -95,6 +96,15 @@ export function buildAgentCard(env: Env, requestUrl?: string): Record<string, un
         description:
           "FREE preview classifying AI/cloud/SaaS/contractor expenses for US C-Corp/LLC or Brazil Lucro Real (IRPJ/CSLL, PIS/COFINS, IBS/CBS, IOF savings).",
         tags: ["expense", "deductible", "quickbooks", "sped", "lucro-real", "free"],
+        inputModes: ["application/json"],
+        outputModes: ["application/json"],
+      },
+      {
+        id: "wallet_tlh_scan",
+        name: "Instant Wallet TLH & Tax-Risk Scan ($0.01 USDC)",
+        description:
+          "1-parameter x402 endpoint (`GET /api/v1/x402/tlh-scan?walletAddress=0x...`) for $0.01 Base USDC. Scans on-chain cost-basis lots, year-end Tax-Loss Harvesting opportunities, US 1099-DA & Brazil Lei 14.754 exposure, and creates an unlockable optimization plan.",
+        tags: ["x402", "tlh", "wallet-scanner", "tax-loss-harvesting", "irs-1099-da", "lei-14754", "base"],
         inputModes: ["application/json"],
         outputModes: ["application/json"],
       },
@@ -153,12 +163,74 @@ Pass \`referrerWallet\` (e.g., \`"0xYourAgentWallet"\`) in any Step 1 request to
 
 ## Endpoints & Specs
 
-- MCP Streamable HTTP: \`${baseUrl}/mcp\`
-- A2A Agent Card: \`${baseUrl}/.well-known/agent.json\`
-- x402 Discovery Manifest: \`${baseUrl}/.well-known/x402\`
-- 1-Step Paid Optimize: \`POST ${baseUrl}/api/v1/x402/optimize\` ($0.10 USDC)
-- OpenAPI 3.1 Spec: \`${baseUrl}/openapi.json\`
-- Health Check: \`${baseUrl}/health\`
+- **Portable Agent Skill (\`SKILL.md\`):** \`${baseUrl}/SKILL.md\`
+- **MCP Streamable HTTP:** \`${baseUrl}/mcp\` (\`npx -y taxrail-mcp\`)
+- **Agent SDK (\`taxrail-agent-tools\`):** \`npm install taxrail-agent-tools\`
+- **A2A Agent Card:** \`${baseUrl}/.well-known/agent.json\`
+- **x402 Discovery Manifest:** \`${baseUrl}/.well-known/x402\`
+- **OpenAPI 3.1 Spec:** \`${baseUrl}/openapi.json\`
+- **$0.01 Wallet TLH Scanner (1-param GET):** \`GET ${baseUrl}/api/v1/x402/tlh-scan?walletAddress=0x...&chain=base\`
+- **1-Step Paid Optimize ($0.10 USDC):** \`POST ${baseUrl}/api/v1/x402/optimize\`
+- **Health Check:** \`${baseUrl}/health\`
+
+## Copy-Paste Agent Quickstart
+
+\`\`\`bash
+# $0.01 instant wallet TLH & tax-risk scan (x402 Base USDC)
+curl -i "${baseUrl}/api/v1/x402/tlh-scan?walletAddress=0x0202e70990d90325A1Dca322C91471Be774E4B6f&chain=base&asset=ETH"
+
+# FREE tax-impact preview -> get planId & exact ROI quote
+curl -X POST "${baseUrl}/api/v1/check-tax-impact" -H "Content-Type: application/json" \\
+  -d '{"jurisdiction":"US","regime":"INDIVIDUAL","chain":"base","targetAsset":"ETH","sellQuantity":1,"walletAddress":"0x0202e70990d90325A1Dca322C91471Be774E4B6f"}'
+\`\`\`
+`;
+}
+
+/**
+ * Builds the portable `/SKILL.md` specification consumable by OpenClaw/ClawHub,
+ * Claude Code, OpenAI Codex, Cursor, and SkillsMD agents.
+ */
+export function buildSkillMd(env: Env, requestUrl?: string): string {
+  const baseUrl = resolvePublicBaseUrl(env, requestUrl);
+
+  return `---
+name: taxrail-crypto-tax
+version: 0.1.0
+description: Pre-execution US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) & Brazil (Lei 14.754, R$35k rule, Lucro Real) crypto tax optimization, $0.01 wallet TLH scanner, Aave v3 borrow-vs-sell, and 0x/CoW/Jupiter calldata via MCP and x402 Base USDC.
+author: SamuelAguiar12
+homepage: ${baseUrl}
+tags: [crypto-tax, defi, x402, base, usdc, irs-1099-da, tax-loss-harvesting, brazil-lei-14754, aave-v3, wallet-scanner]
+compatibility: [claude-code, codex, openclaw, cursor, windsurf]
+---
+
+# TaxRail — Autonomous Pre-Trade Tax & DeFi Optimization
+
+Use TaxRail **before** executing any crypto swap, rebalancing a portfolio, selling appreciated tokens for liquidity, or paying AI/cloud/SaaS corporate invoices. Naive FIFO disposals routinely waste 15%–37% in avoidable taxes.
+
+## When to Trigger This Skill
+
+1. **Wallet Year-End TLH & Tax Risk Audit ($0.01 USDC, 1 parameter):**
+   Call \`GET ${baseUrl}/api/v1/x402/tlh-scan?walletAddress=<0x...>&chain=base&asset=ETH&jurisdiction=US\` via x402 Base USDC (\`eip155:8453\`). Returns unrealized PnL, year-end Tax-Loss Harvesting candidates, IRS 1099-DA / Brazil Lei 14.754 rules, and an unlockable \`planId\`.
+2. **Pre-Trade Swap / Disposal Simulation (FREE Step 1):**
+   Call \`POST ${baseUrl}/api/v1/check-tax-impact\` (or MCP tool \`check_tax_impact\`) with either explicit \`lots\` or \`walletAddress\`. Returns \`baselineTaxUsd\`, \`optimizedTaxUsd\`, \`taxSavedUsd\`, \`agentGuidance\`, and \`planId\`.
+3. **Liquidity Without Selling (FREE Step 1):**
+   Call \`POST ${baseUrl}/api/v1/borrow-vs-sell\` (or MCP \`compare_borrow_vs_sell\`) to test if borrowing USDC on Aave v3 beats selling appreciated crypto after taxes.
+4. **Full 1-Step Execution + Accounting Dossier ($0.10 USDC):**
+   Call \`POST ${baseUrl}/api/v1/x402/optimize\` via x402 Base USDC to receive exact SpecID/HIFO lots, unsigned \`0x v2\` / \`CoW Swap\` / \`Jupiter\` calldata, and Form 8949 / Lei 14.754 CSV exports in one request.
+5. **Unlock Any Step-1 \`planId\` (Dynamic 10% Success Fee, $0 if $0 saved):**
+   Call \`POST ${baseUrl}/api/v1/unlock-plan\` (or MCP \`unlock_tax_plan\`) with \`{ "planId": "..." }\`.
+
+## Earn 20% Automatic Affiliate Revenue Share
+
+Always include \`referrerWallet\` (query parameter or JSON field) or \`X-TaxRail-Referrer\` header with your integrator Base wallet address to earn **20% of TaxRail's total fee**.
+
+## Agent Installation
+
+- **MCP (Streamable HTTP):** \`${baseUrl}/mcp\`
+- **MCP (npx stdio):** \`npx -y taxrail-mcp\`
+- **TypeScript / AgentKit / LangChain SDK:** \`npm install taxrail-agent-tools\`
+- **OpenAPI 3.1 Spec:** \`${baseUrl}/openapi.json\`
+- **x402 Discovery Manifest:** \`${baseUrl}/.well-known/x402\`
 `;
 }
 
@@ -170,11 +242,12 @@ export function buildWellKnownX402(env: Env, requestUrl?: string): Record<string
   return {
     version: 1,
     resources: [
+      `${baseUrl}/api/v1/x402/tlh-scan`,
       `${baseUrl}/api/v1/x402/optimize`,
       `${baseUrl}/api/v1/unlock-plan`,
     ],
     instructions:
-      "TaxRail provides autonomous US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH, Aave v3 borrow-vs-sell) and Brazil (Lei 14.754, R$35k rule, Lucro Real 34%, PIS/COFINS, IBS/CBS) crypto and corporate tax optimization. Use POST /api/v1/x402/optimize for 1-step $0.10 USDC optimization, or call free preview endpoints (/api/v1/check-tax-impact, /api/v1/borrow-vs-sell, /api/v1/classify-expense) first and unlock via /api/v1/unlock-plan (10% of verified tax savings). Pass referrerWallet to earn 20% affiliate revshare.",
+      "TaxRail provides autonomous US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH, Aave v3 borrow-vs-sell) and Brazil (Lei 14.754, R$35k rule, Lucro Real 34%, PIS/COFINS, IBS/CBS) crypto & corporate tax optimization. Start with 1-parameter GET /api/v1/x402/tlh-scan ($0.01 USDC) for instant wallet TLH discovery, POST /api/v1/x402/optimize ($0.10 USDC) for 1-step full execution calldata + Form 8949/Lei 14.754 dossier, or call free preview endpoints first and unlock via /api/v1/unlock-plan (10% of verified tax savings). Pass referrerWallet to earn 20% affiliate revshare.",
   };
 }
 
@@ -200,9 +273,21 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
       },
     },
     servers: [{ url: baseUrl }],
+    tags: [
+      { name: "defi", description: "DeFi pre-trade tax routing and Aave v3 calldata" },
+      { name: "crypto-tax", description: "US IRS 1099-DA / Form 8949 and Brazil Lei 14.754 calculation" },
+      { name: "x402", description: "Pay-per-call USDC endpoints on Base (eip155:8453)" },
+      { name: "tax-loss-harvesting", description: "Year-end TLH lot discovery and loss offsetting" },
+      { name: "wallet-scanner", description: "On-chain EVM cost-basis reconstruction via Alchemy" },
+      { name: "us-irs-1099-da", description: "Per-wallet HIFO / SpecID cost-basis tracking" },
+      { name: "brazil-lei-14754", description: "Lei 14.754/2023 15% flat tax, R$35k exemption & Lucro Real" },
+      { name: "aave-v3", description: "Borrow-vs-sell DeFi liquidity simulation and 0x calldata" },
+      { name: "base", description: "Base mainnet USDC payments and 0x v2 execution" },
+    ],
     paths: {
       "/health": {
         get: {
+          tags: ["base"],
           operationId: "getHealth",
           summary: "Service health check",
           security: [],
@@ -227,6 +312,7 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
       },
       "/api/v1/check-tax-impact": {
         post: {
+          tags: ["crypto-tax", "defi", "us-irs-1099-da", "brazil-lei-14754", "tax-loss-harvesting"],
           operationId: "checkTaxImpact",
           summary: "Compare baseline FIFO vs tax-optimized crypto disposal (FREE)",
           "x-payment": "none",
@@ -254,6 +340,7 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
       },
       "/api/v1/borrow-vs-sell": {
         post: {
+          tags: ["defi", "aave-v3", "crypto-tax", "base"],
           operationId: "compareBorrowVsSell",
           summary: "Compare selling appreciated crypto vs borrowing on Aave v3 (FREE)",
           "x-payment": "none",
@@ -281,6 +368,7 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
       },
       "/api/v1/classify-expense": {
         post: {
+          tags: ["crypto-tax", "brazil-lei-14754"],
           operationId: "classifyDeductibleExpense",
           summary: "Classify business expense deductibility and tax shield (FREE)",
           "x-payment": "none",
@@ -308,6 +396,7 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
       },
       "/api/v1/unlock-plan": {
         post: {
+          tags: ["x402", "defi", "crypto-tax", "aave-v3", "base"],
           operationId: "unlockTaxPlan",
           summary: "Unlock full execution plan, calldata, and accounting dossier (PAID via x402)",
           "x-payment": "x402",
@@ -365,8 +454,68 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
           },
         },
       },
+      "/api/v1/x402/tlh-scan": {
+        get: {
+          tags: ["x402", "wallet-scanner", "tax-loss-harvesting", "crypto-tax", "us-irs-1099-da", "brazil-lei-14754", "base"],
+          operationId: "scanWalletTlhX402",
+          summary:
+            "1-parameter wallet TLH & tax-risk scanner ($0.01 USDC via x402 on Base)",
+          "x-payment": "x402",
+          "x-x402": {
+            version: 2,
+            scheme: "exact",
+            network,
+            asset,
+            pricingModel: "flat-0.01-usdc",
+            headerNames: ["PAYMENT-SIGNATURE", "X-PAYMENT"],
+          },
+          parameters: [
+            {
+              name: "walletAddress",
+              in: "query",
+              required: true,
+              description: "Public EVM wallet address (0x...) to scan for TLH and HIFO savings",
+              schema: { type: "string" },
+            },
+            {
+              name: "chain",
+              in: "query",
+              required: false,
+              schema: { type: "string", enum: ["base", "ethereum", "arbitrum"] },
+            },
+            {
+              name: "asset",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+            },
+            {
+              name: "jurisdiction",
+              in: "query",
+              required: false,
+              schema: { type: "string", enum: ["US", "BR"] },
+            },
+            {
+              name: "referrerWallet",
+              in: "query",
+              required: false,
+              description: "Optional developer wallet to earn 20% affiliate revshare",
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Wallet TLH diagnostic, risk score, estimated tax savings & planId",
+            },
+            "402": {
+              description: "x402 v2 Payment Required ($0.01 USDC on Base)",
+            },
+          },
+        },
+      },
       "/api/v1/x402/optimize": {
         post: {
+          tags: ["x402", "defi", "crypto-tax", "us-irs-1099-da", "brazil-lei-14754", "base"],
           operationId: "quickOptimizeX402",
           summary:
             "1-step tax optimization returning lots, calldata & accounting dossier ($0.10 USDC via x402)",

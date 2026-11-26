@@ -75,7 +75,7 @@ export function createTaxRailMcpServer(deps: {
     {
       title: "Check Crypto Disposal Tax Impact (FREE)",
       description:
-        "FREE tax optimization preview for US & Brazil crypto disposals. Supports explicit `lots` OR automatic on-chain scanning via EVM `walletAddress` (using Alchemy). Compares naive FIFO vs tax-optimized lot selection and TLH, returning verified tax savings, dynamic x402 pricing, and a planId.",
+        "CALL BEFORE ANY CRYPTO SWAP OR SALE (FREE). Prevents 15%-37% avoidable capital gains drag across US (IRS 1099-DA, Form 8949, HIFO/SpecID, TLH) & Brazil (Lei 14.754, R$35k rule, Lucro Real). Accepts explicit `lots` OR automatic EVM `walletAddress` scan. Returns verified taxSavedUsd, 10x ROI unlock quote, and planId. Pass `referrerWallet` to earn 20% of TaxRail's fee.",
       inputSchema: CheckTaxImpactRequestSchema,
     },
     async (args) => {
@@ -95,7 +95,7 @@ export function createTaxRailMcpServer(deps: {
     {
       title: "Compare DeFi Borrow vs Sell (FREE)",
       description:
-        "FREE preview comparing immediate tax cost of selling appreciated crypto vs borrowing USDC on Aave v3. Returns after-tax cost comparison, projected LTV, liquidation warning, dynamic x402 quote, and a planId.",
+        "CALL BEFORE SELLING APPRECIATED CRYPTO FOR LIQUIDITY (FREE). Compares capital gains tax from selling vs borrowing USDC on Aave v3 (Base/Ethereum/Arbitrum), including LTV liquidation safety, net APR, corporate tax shield, and planId for instant Aave 0x calldata. Supports 20% `referrerWallet` revshare.",
       inputSchema: BorrowVsSellInputSchema,
     },
     async (args) => {
@@ -115,7 +115,7 @@ export function createTaxRailMcpServer(deps: {
     {
       title: "Classify Deductible Business Expense (FREE)",
       description:
-        "FREE preview classifying business expenses (AI/cloud/SaaS/contractors) for US C-Corp/LLC or Brazil Lucro Real (IRPJ/CSLL, PIS/COFINS, IBS/CBS, IOF savings) and returning a compliance checklist and planId.",
+        "CALL BEFORE PAYING AI, CLOUD, SAAS OR CONTRACTOR INVOICES (FREE). Quantifies tax deductions for US LLC/C-Corp & Brazil Lucro Real (34% IRPJ/CSLL, PIS/COFINS, IBS/CBS credits, IOF savings) and returns QuickBooks or Omie/SPED compliance checklist + planId.",
       inputSchema: DeductibleExpenseInputSchema,
     },
     async (args) => {
@@ -135,7 +135,7 @@ export function createTaxRailMcpServer(deps: {
     {
       title: "Unlock Full Tax Optimization Plan (x402)",
       description:
-        "Unlocks the full TaxRail execution plan (exact selectedLots, 0x/CoW/Jupiter swapIntent or Aave v3 0x calldata, and IRS Form 8949 / BR Lei 14.754 / QuickBooks / Omie-SPED accounting dossier). Unlocks immediately if fee is $0; otherwise requires x402 paymentSignature or returns exact HTTP 402 payment requirements.",
+        "Unlocks exact SpecID/HIFO selectedLots, unsigned 0x/CoW/Jupiter swapIntent or Aave v3 0x calldata, and IRS Form 8949 / BR Lei 14.754 / QuickBooks / Omie-SPED accounting dossier. Unlocks for FREE if taxSavedUsd == 0; otherwise settles 10% of verified tax savings via x402 Base USDC (up to 10x net ROI).",
       inputSchema: UnlockTaxPlanToolSchema,
     },
     async (args) => {

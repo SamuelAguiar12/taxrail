@@ -8,23 +8,168 @@ const BASE_URL = (process.env.TAXRAIL_BASE_URL || "https://api.taxrail.online").
   ""
 );
 
-function parseArgs() {
+type EndpointTarget = "unlock" | "tlh-scan" | "optimize" | "all";
+
+function parseArgs(): { live: boolean; dryRun: boolean; endpoint: EndpointTarget } {
   const args = process.argv.slice(2);
+  const endpointArg = args.find((a) => a.startsWith("--endpoint="))?.split("=")[1];
+  const endpoint: EndpointTarget =
+    endpointArg === "tlh-scan" ||
+    endpointArg === "optimize" ||
+    endpointArg === "all" ||
+    endpointArg === "unlock"
+      ? endpointArg
+      : "unlock";
   return {
     live: args.includes("--live"),
     dryRun: args.includes("--dry-run") || !args.includes("--live"),
+    endpoint,
   };
 }
 
+async function runPaidCall(params: {
+  label: string;
+  url: string;
+  method: "GET" | "POST";
+  body?: unknown;
+  live: boolean;
+  rawPrivateKey?: string;
+}) {
+  const { label, url, method, body, live, rawPrivateKey } = params;
+  console.log(`\n[${label}] Probing ${method} ${url}...`);
+
+  const probeRes = await fetch(url, {
+    method,
+    headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
+    body: method === "POST" ? JSON.stringify(body ?? {}) : undefined,
+  });
+
+  if (probeRes.status !== 402) {
+    throw new Error(`${label}: expected HTTP 402, received ${probeRes.status}`);
+  }
+
+  const unpaidBody = (await probeRes.json()) as Record<string, unknown>;
+  const client = new x402Client();
+  const httpClient = new x402HTTPClient(client);
+  const paymentRequired = httpClient.getPaymentRequiredResponse(
+    (h) => probeRes.headers.get(h),
+    unpaidBody
+  );
+
+  const accept = paymentRequired.accepts[0];
+  console.log(
+    `   HTTP 402 -> amount=${accept?.amount} atomic (${(
+      Number(accept?.amount ?? 0) / 1_000_000
+    ).toFixed(2)} USDC) | network=${accept?.network} | bazaar=${Boolean(
+      paymentRequired.extensions?.bazaar
+    )}`
+  );
+
+  if (!live || !rawPrivateKey) {
+    return;
+  }
+
+  const normalizedKey = (
+    rawPrivateKey.startsWith("0x") ? rawPrivateKey : `0x${rawPrivateKey}`
+  ) as `0x${string}`;
+  const account = privateKeyToAccount(normalizedKey);
+  registerExactEvmScheme(client, { signer: account });
+
+  const paymentPayload = await httpClient.createPaymentPayload(paymentRequired);
+  const sigHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload);
+
+  const paidRes = await fetch(url, {
+    method,
+    headers: {
+      ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+      ...sigHeaders,
+    },
+    body: method === "POST" ? JSON.stringify(body ?? {}) : undefined,
+  });
+
+  const paidText = await paidRes.text();
+  if (!paidRes.ok) {
+    throw new Error(`${label} paid call failed (${paidRes.status}): ${paidText}`);
+  }
+
+  try {
+    const settleInfo = httpClient.getPaymentSettleResponse((h) =>
+      paidRes.headers.get(h)
+    );
+    console.log(`   Settled! tx=${(settleInfo as { transaction?: string }).transaction}`);
+  } catch {
+    console.log("   Succeeded (HTTP 200)");
+  }
+}
+
 /**
- * Generates a small ~$5.00 tax-savings scenario so the minimum $0.50 USDC x402 fee applies,
- * inspects the HTTP 402 Bazaar challenge, and (with `--live` + `TEST_PRIVATE_KEY`) signs and
- * settles the first real USDC payment on Base to trigger x402 Bazaar indexing.
+ * Generates and optionally settles live Base USDC x402 payments across TaxRail endpoints
+ * (`unlock` = $0.80, `tlh-scan` = $0.01, `optimize` = $0.10, `all` = tlh-scan + optimize = $0.11).
  */
 async function main() {
-  const { live } = parseArgs();
+  const { live, endpoint } = parseArgs();
+  const rawPrivateKey = process.env.TEST_PRIVATE_KEY?.trim();
 
-  console.log(`\n[TaxRail Bazaar Settlement] Target: ${BASE_URL}`);
+  console.log(`\n[TaxRail Bazaar Settlement] Target: ${BASE_URL} | endpoint=${endpoint}`);
+
+  if (endpoint === "tlh-scan" || endpoint === "all") {
+    await runPaidCall({
+      label: "$0.01 TLH Scan",
+      url: `${BASE_URL}/api/v1/x402/tlh-scan?walletAddress=0x0202e70990d90325A1Dca322C91471Be774E4B6f&chain=base&asset=ETH`,
+      method: "GET",
+      live,
+      rawPrivateKey,
+    });
+  }
+
+  if (endpoint === "optimize" || endpoint === "all") {
+    await runPaidCall({
+      label: "$0.10 Quick Optimize",
+      url: `${BASE_URL}/api/v1/x402/optimize`,
+      method: "POST",
+      body: {
+        jurisdiction: "US",
+        regime: "INDIVIDUAL",
+        chain: "base",
+        targetAsset: "ETH",
+        sellQuantity: 0.05,
+        currentPriceUsd: 3000,
+        targetQuoteAsset: "USDC",
+        asOfDate: "2026-06-01T00:00:00Z",
+        lots: [
+          {
+            lotId: "bazaar-opt-fifo",
+            asset: "ETH",
+            quantity: 0.05,
+            costBasisUsd: 2400,
+            acquiredAt: "2026-03-01T00:00:00Z",
+            custodyLocation: "SELF_CUSTODY",
+          },
+          {
+            lotId: "bazaar-opt-hifo",
+            asset: "ETH",
+            quantity: 0.05,
+            costBasisUsd: 2900,
+            acquiredAt: "2026-04-01T00:00:00Z",
+            custodyLocation: "SELF_CUSTODY",
+          },
+        ],
+      },
+      live,
+      rawPrivateKey,
+    });
+  }
+
+  if (endpoint !== "unlock") {
+    if (!live || !rawPrivateKey) {
+      console.log("\n[Dry-Run Complete]");
+      console.log(
+        `Run live with:\n  TEST_PRIVATE_KEY=0xYOUR_KEY pnpm bazaar:settle -- --live --endpoint=${endpoint}`
+      );
+    }
+    return;
+  }
+
   console.log("1. Creating minimal $0.50 USDC optimization plan via /api/v1/check-tax-impact...");
 
   const previewRes = await fetch(`${BASE_URL}/api/v1/check-tax-impact`, {
@@ -105,7 +250,6 @@ async function main() {
     `   Bazaar extension attached: ${Boolean(paymentRequired.extensions?.bazaar)}`
   );
 
-  const rawPrivateKey = process.env.TEST_PRIVATE_KEY?.trim();
   if (!live || !rawPrivateKey) {
     console.log("\n[Dry-Run Complete]");
     console.log("To execute the real $0.50 USDC settlement on Base and index in x402 Bazaar:");

@@ -8,7 +8,13 @@ import {
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { z } from "zod";
-import { buildAgentCard, buildLlmsTxt, buildOpenApiSpec, buildWellKnownX402 } from "./discovery.js";
+import {
+  buildAgentCard,
+  buildLlmsTxt,
+  buildOpenApiSpec,
+  buildSkillMd,
+  buildWellKnownX402,
+} from "./discovery.js";
 import { type Env, resolvePublicBaseUrl } from "./env.js";
 import { handleMcpHttpRequest } from "./mcp.js";
 import { fetchSpotPriceUsd, fetchWalletLotsFromAlchemy } from "./onchain.js";
@@ -18,11 +24,13 @@ import {
   executeCheckTaxImpact,
   executeClassifyExpense,
   executeQuickOptimize,
+  executeWalletTlhScan,
 } from "./service.js";
 import {
   buildQuickOptimizeProbePaymentRequired,
   buildUnlockProbePaymentRequired,
   verifyQuickOptimizePayment,
+  verifyTlhScanPayment,
   verifyUnlockPayment,
 } from "./x402.js";
 
@@ -91,7 +99,9 @@ export function createApp(): Hono<{ Bindings: Env }> {
       links: {
         health: `${baseUrl}/health`,
         agentCard: `${baseUrl}/.well-known/agent.json`,
+        x402Manifest: `${baseUrl}/.well-known/x402`,
         llmsTxt: `${baseUrl}/llms.txt`,
+        skillMd: `${baseUrl}/SKILL.md`,
         openapi: `${baseUrl}/openapi.json`,
         mcp: `${baseUrl}/mcp`,
       },
@@ -128,6 +138,16 @@ export function createApp(): Hono<{ Bindings: Env }> {
 
   app.get("/openapi.json", (c) => {
     return c.json(buildOpenApiSpec(c.env, c.req.url));
+  });
+
+  app.get("/api/openapi.json", (c) => {
+    return c.json(buildOpenApiSpec(c.env, c.req.url));
+  });
+
+  app.get("/SKILL.md", (c) => {
+    return c.text(buildSkillMd(c.env, c.req.url), 200, {
+      "Content-Type": "text/markdown; charset=utf-8",
+    });
   });
 
   app.get("/.well-known/x402", (c) => {
@@ -414,6 +434,99 @@ export function createApp(): Hono<{ Bindings: Env }> {
         400
       );
     }
+  });
+
+  // 1-parameter $0.01 USDC TLH & Tax-Risk Scanner (Paywall runs BEFORE query/body validation)
+  app.on(["GET", "POST"], "/api/v1/x402/tlh-scan", async (c) => {
+    const paymentHeader =
+      c.req.header("PAYMENT-SIGNATURE") ?? c.req.header("X-PAYMENT") ?? null;
+
+    const paymentResult = await verifyTlhScanPayment({
+      paymentHeader,
+      env: c.env,
+      requestUrl: c.req.url,
+    });
+
+    if (paymentResult.status !== "paid") {
+      c.header("PAYMENT-REQUIRED", paymentResult.paymentRequiredHeader);
+      c.header("Cache-Control", "no-store");
+      const body =
+        paymentResult.status === "payment_required"
+          ? paymentResult.paymentRequired
+          : {
+              ...paymentResult.paymentRequired,
+              error: paymentResult.reason,
+            };
+      return c.json(body, 402);
+    }
+
+    let bodyParams: Record<string, unknown> = {};
+    if (c.req.method === "POST") {
+      try {
+        const text = await c.req.text();
+        if (text.trim()) {
+          bodyParams = JSON.parse(text) as Record<string, unknown>;
+        }
+      } catch {
+        return c.json({ error: "Invalid JSON request body" }, 400);
+      }
+    }
+
+    const walletAddress = (
+      c.req.query("walletAddress") ||
+      c.req.query("address") ||
+      (typeof bodyParams.walletAddress === "string" ? bodyParams.walletAddress : "") ||
+      ""
+    ).trim();
+
+    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      return c.json(
+        {
+          error:
+            "Missing or invalid `walletAddress`. Provide a valid 0x EVM address via `?walletAddress=0x...`.",
+        },
+        400
+      );
+    }
+
+    const rawChain =
+      c.req.query("chain") ||
+      (typeof bodyParams.chain === "string" ? bodyParams.chain : "base");
+    const chain =
+      rawChain === "ethereum" || rawChain === "arbitrum" || rawChain === "base"
+        ? rawChain
+        : "base";
+    const asset =
+      c.req.query("asset") ||
+      (typeof bodyParams.asset === "string" ? bodyParams.asset : "ETH");
+    const rawJurisdiction =
+      c.req.query("jurisdiction") ||
+      (typeof bodyParams.jurisdiction === "string" ? bodyParams.jurisdiction : "US");
+    const jurisdiction = rawJurisdiction.toUpperCase() === "BR" ? "BR" : "US";
+    const regimeParam =
+      c.req.query("regime") ||
+      (typeof bodyParams.regime === "string" ? bodyParams.regime : undefined);
+    const referrerWallet =
+      c.req.query("referrerWallet") ||
+      (typeof bodyParams.referrerWallet === "string" ? bodyParams.referrerWallet : undefined);
+
+    const planStore = createPlanStore(c.env);
+    const scanResult = await executeWalletTlhScan(
+      {
+        walletAddress,
+        chain,
+        asset,
+        jurisdiction,
+        ...(regimeParam ? { regime: regimeParam as Parameters<typeof executeWalletTlhScan>[0]["regime"] } : {}),
+        ...(referrerWallet ? { referrerWallet } : {}),
+      },
+      { planStore, env: c.env }
+    );
+
+    if (paymentResult.paymentResponseHeader) {
+      c.header("PAYMENT-RESPONSE", paymentResult.paymentResponseHeader);
+    }
+    return c.json(scanResult, 200);
   });
 
   // Stateless Streamable HTTP MCP server

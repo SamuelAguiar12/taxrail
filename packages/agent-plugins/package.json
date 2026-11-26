@@ -1,17 +1,48 @@
 {
-  "name": "@taxrail/agent-plugins",
+  "name": "taxrail-agent-tools",
   "version": "0.1.0",
   "type": "module",
-  "main": "./src/index.ts",
+  "description": "Coinbase AgentKit ActionProvider, LangChain structured tools, x402 client & $0.01 TLH wallet scanner for TaxRail (US + Brazil pre-trade crypto tax optimization with 20% referrerWallet revshare)",
+  "license": "MIT",
+  "homepage": "https://api.taxrail.online",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SamuelAguiar12/taxrail.git",
+    "directory": "packages/agent-plugins"
+  },
+  "keywords": [
+    "taxrail",
+    "x402",
+    "coinbase-agentkit",
+    "langchain",
+    "ai-agents",
+    "crypto-tax",
+    "defi",
+    "aave",
+    "tax-loss-harvesting",
+    "irs-1099-da",
+    "brazil",
+    "base",
+    "usdc"
+  ],
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./dist/index.js"
   },
   "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=neutral --format=esm --outfile=dist/index.js --external:zod",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@taxrail/shared": "workspace:*",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@taxrail/shared": "workspace:*",
+    "esbuild": "^0.28.2"
   }
 }

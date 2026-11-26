@@ -40,7 +40,7 @@ describe("TaxRail Edge Worker", () => {
       expect((card.pricing as Record<string, unknown>).protocol).toBe("x402");
       expect((card.affiliateProgram as Record<string, unknown>).revsharePct).toBe(0.2);
       expect(Array.isArray(card.skills)).toBe(true);
-      expect((card.skills as unknown[]).length).toBe(4);
+      expect((card.skills as unknown[]).length).toBe(5);
     });
 
     it("serves GET /llms.txt with 2-step funnel documentation", async () => {
@@ -62,22 +62,36 @@ describe("TaxRail Edge Worker", () => {
       expect(svg).toContain("TR");
     });
 
-    it("serves GET /openapi.json with OpenAPI 3.1 paths, contact.email, and security: [] on free routes", async () => {
-      const res = await app.request("/openapi.json", undefined, testEnv);
+    it("serves GET /openapi.json and /api/openapi.json with tags, tlh-scan, contact.email, and security: []", async () => {
+      const res = await app.request("/api/openapi.json", undefined, testEnv);
       expect(res.status).toBe(200);
       const spec = (await res.json()) as {
         openapi: string;
         info: { contact?: { email?: string } };
+        tags?: Array<{ name: string }>;
         paths: Record<string, Record<string, Record<string, unknown>>>;
       };
       expect(spec.openapi).toBe("3.1.0");
       expect(spec.info?.contact?.email).toBe("samuelaguiar1242@gmail.com");
+      expect(spec.tags?.map((t) => t.name)).toContain("tax-loss-harvesting");
       expect(spec.paths["/health"]?.get?.security).toEqual([]);
       expect(spec.paths["/api/v1/check-tax-impact"]?.post?.security).toEqual([]);
       expect(spec.paths["/api/v1/borrow-vs-sell"]?.post?.security).toEqual([]);
       expect(spec.paths["/api/v1/classify-expense"]?.post?.security).toEqual([]);
       expect(spec.paths["/api/v1/unlock-plan"]?.post?.["x-payment"]).toBe("x402");
+      expect(spec.paths["/api/v1/x402/tlh-scan"]?.get?.["x-payment"]).toBe("x402");
       expect(spec.paths["/api/v1/x402/optimize"]?.post?.["x-payment"]).toBe("x402");
+    });
+
+    it("serves GET /SKILL.md for OpenClaw/ClawHub, Claude Code, Codex, and SkillsMD", async () => {
+      const res = await app.request("/SKILL.md", undefined, testEnv);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toContain("text/markdown");
+      const md = await res.text();
+      expect(md).toContain("name: taxrail-crypto-tax");
+      expect(md).toContain("/api/v1/x402/tlh-scan");
+      expect(md).toContain("referrerWallet");
+      expect(md).toContain("taxrail-agent-tools");
     });
 
     it("returns HTTP 402 on GET /api/v1/unlock-plan, empty POST /api/v1/unlock-plan, and GET /api/v1/x402/optimize probes", async () => {
@@ -102,7 +116,7 @@ describe("TaxRail Edge Worker", () => {
       expect(getOptimizeRes.headers.get("PAYMENT-REQUIRED")).toBeTruthy();
     });
 
-    it("serves GET /.well-known/x402 with resource URLs for x402scan", async () => {
+    it("serves GET /.well-known/x402 with resource URLs including tlh-scan for x402scan", async () => {
       const res = await app.request("/.well-known/x402", undefined, testEnv);
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
@@ -111,8 +125,86 @@ describe("TaxRail Edge Worker", () => {
         instructions: string;
       };
       expect(body.version).toBe(1);
+      expect(body.resources).toContain("https://api.taxrail.online/api/v1/x402/tlh-scan");
       expect(body.resources).toContain("https://api.taxrail.online/api/v1/x402/optimize");
       expect(body.resources).toContain("https://api.taxrail.online/api/v1/unlock-plan");
+    });
+
+    it("returns HTTP 402 ($0.01 USDC) on unpaid /api/v1/x402/tlh-scan and structured 200 diagnostic when paid", async () => {
+      const unpaidRes = await app.request("/api/v1/x402/tlh-scan", undefined, testEnv);
+      expect(unpaidRes.status).toBe(402);
+      expect(unpaidRes.headers.get("PAYMENT-REQUIRED")).toBeTruthy();
+      const unpaidBody = (await unpaidRes.json()) as {
+        accepts: Array<{ amount: string }>;
+        extensions?: { bazaar?: { info?: { input?: { method?: string } } } };
+      };
+      expect(unpaidBody.accepts[0]?.amount).toBe("10000");
+      expect(unpaidBody.extensions?.bazaar?.info?.input?.method).toBe("GET");
+
+      const paidRes = await app.request(
+        "/api/v1/x402/tlh-scan?walletAddress=0x0202e70990d90325A1Dca322C91471Be774E4B6f&chain=base&asset=ETH",
+        {
+          method: "GET",
+          headers: { "X-PAYMENT": `dev-bypass:${TEST_BYPASS_TOKEN}` },
+        },
+        testEnv
+      );
+      expect(paidRes.status).toBe(200);
+      const diag = (await paidRes.json()) as {
+        walletAddress: string;
+        taxRiskScore: string;
+        yearEndTlhDeadline: string;
+        nextRecommendedAction: { endpoint: string };
+      };
+      expect(diag.walletAddress).toBe("0x0202e70990d90325A1Dca322C91471Be774E4B6f");
+      expect(["LOW", "MEDIUM", "HIGH"]).toContain(diag.taxRiskScore);
+      expect(diag.yearEndTlhDeadline).toBe("2026-12-31");
+      expect(diag.nextRecommendedAction.endpoint).toBeTruthy();
+    });
+
+    it("includes quantitative agentGuidance on free /api/v1/check-tax-impact previews", async () => {
+      const previewRes = await app.request(
+        "/api/v1/check-tax-impact",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            jurisdiction: "US",
+            regime: "INDIVIDUAL",
+            targetAsset: "ETH",
+            sellQuantity: 1,
+            currentPriceUsd: 3000,
+            asOfDate: "2026-06-01T00:00:00Z",
+            lots: [
+              {
+                lotId: "guidance-fifo",
+                asset: "ETH",
+                quantity: 1,
+                costBasisUsd: 1000,
+                acquiredAt: "2025-01-01T00:00:00Z",
+                custodyLocation: "SELF_CUSTODY",
+              },
+              {
+                lotId: "guidance-hifo",
+                asset: "ETH",
+                quantity: 1,
+                costBasisUsd: 2600,
+                acquiredAt: "2025-02-01T00:00:00Z",
+                custodyLocation: "SELF_CUSTODY",
+              },
+            ],
+          }),
+        },
+        testEnv
+      );
+      expect(previewRes.status).toBe(200);
+      const body = (await previewRes.json()) as {
+        planId: string;
+        agentGuidance?: string;
+      };
+      expect(body.agentGuidance).toContain(body.planId);
+      expect(body.agentGuidance).toContain("ROI");
+      expect(body.agentGuidance).toContain("/api/v1/unlock-plan");
     });
 
     it("returns HTTP 402 with rich SEO & Bazaar metadata on unpaid /api/v1/x402/optimize probes, and unlocks on dev-bypass", async () => {
