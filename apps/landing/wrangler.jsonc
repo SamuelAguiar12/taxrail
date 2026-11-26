@@ -1,0 +1,18 @@
+{
+  "$schema": "../../apps/edge-worker/node_modules/wrangler/config-schema.json",
+  "name": "taxrail-landing",
+  "compatibility_date": "2026-11-26",
+  "assets": {
+    "directory": "."
+  },
+  "routes": [
+    {
+      "pattern": "taxrail.online",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.taxrail.online",
+      "custom_domain": true
+    }
+  ]
+}

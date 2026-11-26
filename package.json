@@ -10,6 +10,7 @@
     "test": "pnpm -r --if-present test",
     "dev:worker": "pnpm --filter @taxrail/edge-worker dev",
     "deploy:dry-run": "pnpm --filter @taxrail/edge-worker exec wrangler deploy --dry-run",
+    "deploy:landing": "pnpm --filter @taxrail/edge-worker exec wrangler deploy --config ../../apps/landing/wrangler.jsonc",
     "bazaar:settle": "pnpm --filter @taxrail/edge-worker exec node --experimental-strip-types scripts/trigger-bazaar-settlement.mts"
   },
   "devDependencies": {
