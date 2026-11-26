@@ -281,8 +281,8 @@
           <div class="field">
             <label for="cw-chain">Chain</label>
             <select id="cw-chain">
-              <option value="base" selected>Base</option>
-              <option value="ethereum">Ethereum</option>
+              <option value="ethereum" selected>Ethereum</option>
+              <option value="base">Base</option>
               <option value="arbitrum">Arbitrum</option>
             </select>
           </div>
@@ -304,7 +304,7 @@
         </div>
         <div class="calc-actions">
           <button class="btn btn-primary" onclick="runFreeWalletScan()">Scan Wallet Savings Free</button>
-          <button class="btn" onclick="document.getElementById('cw-addr').value='0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1'; runFreeWalletScan();">Try Sample Base Wallet</button>
+          <button class="btn" onclick="document.getElementById('cw-addr').value='0x849151d7D0bF1F34b70d5caD5149D28CC2308bf1'; document.getElementById('cw-chain').value='ethereum'; document.getElementById('cw-asset').value='ETH'; document.getElementById('cw-qty').value='1'; runFreeWalletScan();">Try Sample Wallet (ETH)</button>
           <button class="btn" onclick="switchCalcTab('manual'); runManualTradeCalc();">Try Sample HIFO Trade (Real Savings)</button>
         </div>
       </div>
