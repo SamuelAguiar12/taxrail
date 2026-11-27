@@ -2,6 +2,13 @@
 
 [![SamuelAguiar12/taxrail MCP server](https://glama.ai/mcp/servers/SamuelAguiar12/taxrail/badges/score.svg)](https://glama.ai/mcp/servers/SamuelAguiar12/taxrail)
 [![TaxRail MCP connector](https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail/badges/score.svg)](https://glama.ai/mcp/connectors/online.taxrail.api/tax-rail)
+[![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/SamuelAguiar12/taxrail)
+[![MCP Registry v0.3.0](https://img.shields.io/badge/MCP%20Registry-v0.3.0-10B981)](https://registry.modelcontextprotocol.io/)
+[![ToolSDK Merged](https://img.shields.io/badge/ToolSDK-Merged-0EA5E9)](https://github.com/toolsdk-ai/toolsdk-mcp-registry/blob/main/packages/finance-fintech/toolsdk-remote-taxrail.json)
+[![TensorBlock Indexed](https://img.shields.io/badge/TensorBlock-Indexed-6366F1)](https://github.com/TensorBlock/awesome-mcp-servers/blob/main/docs/finance--crypto.md)
+[![npm MCP](https://img.shields.io/npm/v/taxrail-mcp?label=npm%20MCP&color=CB3837)](https://www.npmjs.com/package/taxrail-mcp)
+[![npm SDK](https://img.shields.io/npm/v/taxrail-agent-tools?label=npm%20SDK&color=CB3837)](https://www.npmjs.com/package/taxrail-agent-tools)
+[![PyPI](https://img.shields.io/pypi/v/taxrail?label=PyPI&color=3775A9)](https://pypi.org/project/taxrail/)
 
 **The Autonomous $0-Upfront Tax-Optimization Rail for Humans & AI Agents — US & Brazil**
 

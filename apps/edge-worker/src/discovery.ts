@@ -18,25 +18,45 @@ export function buildAgentCard(env: Env, requestUrl?: string): Record<string, un
     name: "TaxRail",
     description:
       "Autonomous Tax-Optimization Rail for AI Agents (US + Brazil). Optimizes crypto tax-lot selection, tax-loss harvesting, DeFi Aave v3 borrow-vs-sell liquidity strategies, and deductible expense classification.",
-    url: baseUrl,
-    version: "0.1.0",
+    url: `${baseUrl}/a2a`,
+    version: "0.3.0",
+    protocolVersion: "0.3.0",
     provider: {
       organization: "TaxRail",
-      url: baseUrl,
+      url: "https://taxrail.online",
     },
+    supportedInterfaces: [
+      {
+        url: `${baseUrl}/a2a`,
+        protocolBinding: "JSONRPC",
+        protocolVersion: "1.0",
+      },
+      {
+        url: baseUrl,
+        protocolBinding: "HTTP+JSON",
+        protocolVersion: "1.0",
+      },
+    ],
     capabilities: {
-      streaming: true,
+      streaming: false,
       pushNotifications: false,
       stateTransitionHistory: false,
     },
-    defaultInputModes: ["application/json"],
-    defaultOutputModes: ["application/json"],
+    defaultInputModes: ["application/json", "text/plain"],
+    defaultOutputModes: ["application/json", "text/plain"],
     jurisdictions: ["US", "BR"],
     supportedRegimes: {
       US: ["INDIVIDUAL", "LLC_PASS_THROUGH", "C_CORP"],
       BR: ["PF_LEI_14754", "PF_DOMESTIC", "PJ_LUCRO_REAL", "PJ_SIMPLES_EXPORT"],
     },
     endpoints: {
+      a2a: {
+        jsonRpcUrl: `${baseUrl}/a2a`,
+        rootJsonRpcUrl: baseUrl,
+        sendMessageUrl: `${baseUrl}/message:send`,
+        getTaskUrl: `${baseUrl}/tasks/{id}`,
+        methods: ["message/send", "SendMessage", "tasks/get", "GetTask"],
+      },
       mcp: {
         url: `${baseUrl}/mcp`,
         transport: "streamable-http",
@@ -176,6 +196,7 @@ Pass \`referrerWallet\` (e.g., \`"0xYourAgentWallet"\`) in any Step 1 request to
 ## Endpoints & Specs
 
 - **Portable Agent Skill (\`SKILL.md\`):** ${baseUrl}/SKILL.md
+- **A2A JSON-RPC Endpoint (\`message/send\`, \`SendMessage\`):** ${baseUrl}/a2a (also \`POST ${baseUrl}\` & \`POST ${baseUrl}/message:send\`)
 - **MCP Streamable HTTP:** ${baseUrl}/mcp (\`npx -y taxrail-mcp\`)
 - **TypeScript Agent SDK:** \`npm install taxrail-agent-tools\`
 - **Python Agent SDK (Zero-Deps + LangChain/CrewAI):** \`pip install taxrail\`
@@ -318,6 +339,7 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
       { name: "wallet-scanner", description: "On-chain EVM cost-basis reconstruction via Alchemy" },
       { name: "us-irs-1099-da", description: "Per-wallet HIFO / SpecID cost-basis tracking" },
       { name: "brazil-lei-14754", description: "Lei 14.754/2023 15% flat tax, R$35k exemption & Lucro Real" },
+      { name: "a2a", description: "Agent-to-Agent (A2A) JSON-RPC 2.0 and HTTP+JSON endpoints" },
       { name: "aave-v3", description: "Borrow-vs-sell DeFi liquidity simulation and 0x calldata" },
       { name: "base", description: "Base mainnet USDC payments and 0x v2 execution" },
     ],
@@ -706,6 +728,88 @@ export function buildOpenApiSpec(env: Env, requestUrl?: string): Record<string, 
           security: [],
           responses: {
             "200": { description: "Public verified reputation summary and reviews" },
+          },
+        },
+      },
+      "/a2a": {
+        post: {
+          tags: ["a2a"],
+          operationId: "a2aJsonRpc",
+          summary:
+            "A2A JSON-RPC 2.0 endpoint supporting message/send, SendMessage, tasks/get, GetTask, and agent/getAuthenticatedExtendedCard",
+          "x-payment": "none",
+          security: [],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["jsonrpc", "method"],
+                  properties: {
+                    jsonrpc: { type: "string", enum: ["2.0"] },
+                    id: { type: ["string", "number", "null"] },
+                    method: {
+                      type: "string",
+                      enum: [
+                        "message/send",
+                        "SendMessage",
+                        "tasks/get",
+                        "GetTask",
+                        "agent/getAuthenticatedExtendedCard",
+                      ],
+                    },
+                    params: { type: "object" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "JSON-RPC 2.0 A2A Task or Agent Card response" },
+          },
+        },
+      },
+      "/message:send": {
+        post: {
+          tags: ["a2a"],
+          operationId: "a2aSendMessage",
+          summary: "A2A v1.0 HTTP+JSON SendMessage endpoint",
+          "x-payment": "none",
+          security: [],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["message"],
+                  properties: {
+                    message: { type: "object" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Completed A2A Task wrapping TaxRail tax analysis or calldata" },
+            "400": { description: "Invalid message payload" },
+          },
+        },
+      },
+      "/tasks/{id}": {
+        get: {
+          tags: ["a2a"],
+          operationId: "a2aGetTask",
+          summary: "Retrieve a previously created A2A Task by id",
+          "x-payment": "none",
+          security: [],
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+          ],
+          responses: {
+            "200": { description: "A2A Task object" },
+            "404": { description: "Task not found" },
           },
         },
       },

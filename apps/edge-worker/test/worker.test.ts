@@ -50,6 +50,10 @@ describe("TaxRail Edge Worker", () => {
       expect((card.affiliateProgram as Record<string, unknown>).revsharePct).toBe(0.2);
       expect(Array.isArray(card.skills)).toBe(true);
       expect((card.skills as unknown[]).length).toBe(6);
+      expect(Array.isArray(card.supportedInterfaces)).toBe(true);
+      expect((card.endpoints as { a2a?: { jsonRpcUrl?: string } }).a2a?.jsonRpcUrl).toContain(
+        "/a2a"
+      );
     });
 
     it("serves GET /llms.txt with 2-step funnel documentation", async () => {
@@ -1721,6 +1725,177 @@ describe("TaxRail Edge Worker", () => {
         testEnv
       );
       expect(feedbackLegacyRes.status).toBe(201);
+    });
+  });
+
+  describe("A2A Protocol (JSON-RPC 2.0 message/send, SendMessage & HTTP+JSON)", () => {
+    it("executes check_tax_impact over POST /a2a message/send and retrieves the task via tasks/get", async () => {
+      const rpcRes = await app.request(
+        "/a2a",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: "a2a-1",
+            method: "message/send",
+            params: {
+              message: {
+                role: "user",
+                parts: [
+                  {
+                    kind: "data",
+                    data: {
+                      skill: "check_tax_impact",
+                      jurisdiction: "US",
+                      regime: "INDIVIDUAL",
+                      chain: "base",
+                      targetAsset: "ETH",
+                      sellQuantity: 1,
+                      currentPriceUsd: 3000,
+                      lots: [
+                        {
+                          lotId: "low",
+                          asset: "ETH",
+                          quantity: 1,
+                          costBasisUsd: 500,
+                          acquiredAt: "2026-06-01T00:00:00Z",
+                          custodyLocation: "SELF_CUSTODY",
+                        },
+                        {
+                          lotId: "high",
+                          asset: "ETH",
+                          quantity: 1,
+                          costBasisUsd: 2900,
+                          acquiredAt: "2026-08-01T00:00:00Z",
+                          custodyLocation: "SELF_CUSTODY",
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          }),
+        },
+        testEnv
+      );
+
+      expect(rpcRes.status).toBe(200);
+      const rpcBody = (await rpcRes.json()) as {
+        jsonrpc: string;
+        id: string;
+        result?: {
+          id: string;
+          status: { state: string };
+          artifacts: Array<{ parts: Array<{ kind: string; data?: { taxSavedUsd?: number; planId?: string } }> }>;
+        };
+      };
+      expect(rpcBody.jsonrpc).toBe("2.0");
+      expect(rpcBody.result?.status.state).toBe("completed");
+      const dataPart = rpcBody.result?.artifacts?.[0]?.parts.find((p) => p.kind === "data");
+      expect(dataPart?.data?.taxSavedUsd).toBeGreaterThan(0);
+      expect(dataPart?.data?.planId).toMatch(/^plan_/);
+
+      const getTaskRes = await app.request(
+        "/a2a",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: "a2a-2",
+            method: "tasks/get",
+            params: { id: rpcBody.result!.id },
+          }),
+        },
+        testEnv
+      );
+      expect(getTaskRes.status).toBe(200);
+      const taskBody = (await getTaskRes.json()) as { result?: { id: string } };
+      expect(taskBody.result?.id).toBe(rpcBody.result?.id);
+    });
+
+    it("handles A2A v1.0 SendMessage on POST / and HTTP+JSON POST /message:send + GET /tasks/:id", async () => {
+      const rootV1Res = await app.request(
+        "/",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "SendMessage",
+            params: {
+              message: {
+                role: "ROLE_USER",
+                parts: [
+                  {
+                    kind: "data",
+                    data: {
+                      skill: "compare_borrow_vs_sell",
+                      jurisdiction: "US",
+                      regime: "INDIVIDUAL",
+                      collateralAsset: "ETH",
+                      collateralAmount: 4,
+                      collateralPriceUsd: 3000,
+                      collateralCostBasisUsd: 800,
+                      holdingDays: 120,
+                      liquidityNeededUsd: 4000,
+                    },
+                  },
+                ],
+              },
+            },
+          }),
+        },
+        testEnv
+      );
+      expect(rootV1Res.status).toBe(200);
+      const rootV1Json = (await rootV1Res.json()) as {
+        result?: { task?: { id: string; status: { state: string } } };
+      };
+      expect(rootV1Json.result?.task?.status.state).toBe("TASK_STATE_COMPLETED");
+
+      const httpSendRes = await app.request(
+        "/message:send",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            message: {
+              role: "ROLE_USER",
+              parts: [{ kind: "text", text: "What tax optimization skills do you support?" }],
+            },
+          }),
+        },
+        testEnv
+      );
+      expect(httpSendRes.status).toBe(200);
+      const httpSendJson = (await httpSendRes.json()) as {
+        task: { id: string; status: { state: string } };
+      };
+      expect(httpSendJson.task.status.state).toBe("TASK_STATE_COMPLETED");
+
+      const httpGetRes = await app.request(`/tasks/${httpSendJson.task.id}`, undefined, testEnv);
+      expect(httpGetRes.status).toBe(200);
+
+      const unknownMethodRes = await app.request(
+        "/a2a",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 99,
+            method: "unknown/method",
+          }),
+        },
+        testEnv
+      );
+      expect(unknownMethodRes.status).toBe(200);
+      const unknownJson = (await unknownMethodRes.json()) as { error?: { code: number } };
+      expect(unknownJson.error?.code).toBe(-32601);
     });
   });
 });
