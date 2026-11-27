@@ -69,6 +69,26 @@ class _MockTaxRailHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if self.path == "/api/v1/borrow-vs-sell":
+            self._send_json(
+                200,
+                {
+                    "planId": "plan_py_borrow_123",
+                    "seenCollateralAmount": body.get("collateralAmount"),
+                    "seenHorizonDays": body.get("horizonDays"),
+                },
+            )
+            return
+        if self.path == "/api/v1/classify-expense":
+            self._send_json(
+                200,
+                {
+                    "planId": "plan_py_exp_123",
+                    "seenVendorName": body.get("vendorName"),
+                    "seenDescription": body.get("description"),
+                },
+            )
+            return
         self._send_json(404, {"error": "Not found"})
 
     def do_POST(self) -> None:  # noqa: N802
@@ -103,6 +123,26 @@ class _MockTaxRailHandler(BaseHTTPRequestHandler):
                     "planId": body.get("planId"),
                     "settlementTx": body.get("txHash"),
                     "plan": {"planId": body.get("planId")},
+                },
+            )
+            return
+        if self.path == "/api/v1/borrow-vs-sell":
+            self._send_json(
+                200,
+                {
+                    "planId": "plan_py_borrow_123",
+                    "seenCollateralAmount": body.get("collateralAmount"),
+                    "seenHorizonDays": body.get("horizonDays"),
+                },
+            )
+            return
+        if self.path == "/api/v1/classify-expense":
+            self._send_json(
+                200,
+                {
+                    "planId": "plan_py_exp_123",
+                    "seenVendorName": body.get("vendorName"),
+                    "seenDescription": body.get("description"),
                 },
             )
             return
@@ -189,6 +229,21 @@ class TaxRailPythonSdkTest(unittest.TestCase):
             chain="base",
         )
         self.assertTrue(claimed["verified"])
+
+        borrow = client.borrow_vs_sell(
+            collateral_quantity=3.5,
+            holding_horizon_days=180,
+        )
+        self.assertEqual(borrow["seenCollateralAmount"], 3.5)
+        self.assertEqual(borrow["seenHorizonDays"], 180)
+
+        expense = client.classify_expense(
+            amount_usd=500.0,
+            vendor="OpenAI",
+            category="AI_COMPUTE",
+        )
+        self.assertEqual(expense["seenVendorName"], "OpenAI")
+        self.assertEqual(expense["seenDescription"], "AI_COMPUTE expense (OpenAI)")
 
         # Calling a fallback tool dict on 402 returns JSON string with status=402
         br_tool = [t for t in lc_tools if (t["name"] if isinstance(t, dict) else t.name) == "taxrail_br_35k_status"][0]

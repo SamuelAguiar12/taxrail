@@ -61,7 +61,7 @@ class TaxRailClient:
         base_url: str = DEFAULT_BASE_URL,
         referrer_wallet: Optional[str] = None,
         timeout_seconds: float = 20.0,
-        user_agent: str = "taxrail-python-sdk/0.1.0",
+        user_agent: str = "taxrail-python-sdk/0.2.0",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.referrer_wallet = referrer_wallet
@@ -194,12 +194,12 @@ class TaxRailClient:
             "regime": resolved_regime,
             "chain": chain,
             "collateralAsset": collateral_asset,
-            "collateralQuantity": collateral_quantity,
+            "collateralAmount": collateral_quantity,
             "collateralPriceUsd": collateral_price_usd,
             "collateralCostBasisUsd": collateral_cost_basis_usd,
             "liquidityNeededUsd": liquidity_needed_usd,
             "holdingDays": holding_days,
-            "holdingHorizonDays": holding_horizon_days,
+            "horizonDays": holding_horizon_days,
         }
         return self._request("POST", "/api/v1/borrow-vs-sell", json_body=body)
 
@@ -220,12 +220,11 @@ class TaxRailClient:
             "jurisdiction": jurisdiction.upper(),
             "regime": resolved_regime,
             "amountUsd": amount_usd,
-            "vendor": vendor,
+            "vendorName": vendor,
             "category": category,
+            "description": description or f"{category} expense ({vendor})",
             "paymentAsset": payment_asset,
         }
-        if description:
-            body["description"] = description
         return self._request("POST", "/api/v1/classify-expense", json_body=body)
 
     def unlock_plan(

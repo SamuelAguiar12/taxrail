@@ -1640,5 +1640,87 @@ describe("TaxRail Edge Worker", () => {
       expect(claimPayload.verified).toBe(true);
       expect(claimPayload.plan.accountingDossier.format).toBe("IRS_FORM_8949");
     });
+
+    it("accepts legacy taxrail-python-sdk/0.1.0 payloads and snake_case aliases across all POST routes", async () => {
+      const borrowLegacyRes = await app.request(
+        "/api/v1/borrow-vs-sell",
+        {
+          method: "POST",
+          headers: jsonHeaders({ "User-Agent": "taxrail-python-sdk/0.1.0" }),
+          body: JSON.stringify({
+            jurisdiction: "US",
+            regime: "INDIVIDUAL",
+            chain: "base",
+            collateralAsset: "ETH",
+            collateralQuantity: 2.0,
+            collateralPriceUsd: 3000.0,
+            collateralCostBasisUsd: 800.0,
+            liquidityNeededUsd: 2500.0,
+            holdingDays: 120,
+            holdingHorizonDays: 90,
+          }),
+        },
+        testEnv
+      );
+      expect(borrowLegacyRes.status).toBe(200);
+
+      const expenseLegacyRes = await app.request(
+        "/api/v1/classify-expense",
+        {
+          method: "POST",
+          headers: jsonHeaders({ "User-Agent": "taxrail-python-sdk/0.1.0" }),
+          body: JSON.stringify({
+            jurisdiction: "US",
+            regime: "C_CORP",
+            amountUsd: 500,
+            vendor: "OpenAI",
+            category: "AI_COMPUTE",
+            paymentAsset: "USDC",
+          }),
+        },
+        testEnv
+      );
+      expect(expenseLegacyRes.status).toBe(200);
+
+      const snakeTaxRes = await app.request(
+        "/api/v1/check-tax-impact",
+        {
+          method: "POST",
+          headers: jsonHeaders(),
+          body: JSON.stringify({
+            jurisdiction: "BR",
+            regime: "PF",
+            target_asset: "ETH",
+            sell_quantity: "1",
+            current_price_usd: "3000",
+            lots: [
+              {
+                quantity: 1,
+                cost_basis_usd: 1500,
+                acquired_at: "2026-01-01T00:00:00Z",
+              },
+            ],
+          }),
+        },
+        testEnv
+      );
+      expect(snakeTaxRes.status).toBe(200);
+
+      const feedbackLegacyRes = await app.request(
+        "/api/v1/feedback",
+        {
+          method: "POST",
+          headers: jsonHeaders({ "User-Agent": "taxrail-python-sdk/0.1.0" }),
+          body: JSON.stringify({
+            rating: "5",
+            category: "praise",
+            message: "Great HIFO tax savings engine!",
+            allow_public_quote: false,
+          }),
+        },
+        testEnv
+      );
+      expect(feedbackLegacyRes.status).toBe(201);
+    });
   });
 });
