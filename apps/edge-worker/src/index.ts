@@ -213,6 +213,16 @@ export function createApp(): Hono<{ Bindings: Env }> {
     return handleA2aJsonRpcRequest(c.req.raw, { planStore, env: c.env });
   });
 
+  app.get("/a2a", (c) => {
+    c.header("Cache-Control", "public, max-age=300");
+    return c.json(buildAgentCard(c.env, c.req.url));
+  });
+
+  app.get("/api/a2a", (c) => {
+    c.header("Cache-Control", "public, max-age=300");
+    return c.json(buildAgentCard(c.env, c.req.url));
+  });
+
   app.post("/a2a", async (c) => {
     const planStore = createPlanStore(c.env);
     return handleA2aJsonRpcRequest(c.req.raw, { planStore, env: c.env });
@@ -378,6 +388,10 @@ export function createApp(): Hono<{ Bindings: Env }> {
   });
 
   app.get("/.well-known/x402", (c) => {
+    return c.json(buildWellKnownX402(c.env, c.req.url));
+  });
+
+  app.get("/.well-known/x402.json", (c) => {
     return c.json(buildWellKnownX402(c.env, c.req.url));
   });
 

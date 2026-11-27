@@ -154,6 +154,17 @@ describe("TaxRail Edge Worker", () => {
       expect(body.resources).toContain("https://api.taxrail.online/api/v1/x402/br-35k-status");
       expect(body.resources).toContain("https://api.taxrail.online/api/v1/x402/optimize");
       expect(body.resources).toContain("https://api.taxrail.online/api/v1/unlock-plan");
+
+      const jsonAliasRes = await app.request("/.well-known/x402.json", undefined, testEnv);
+      expect(jsonAliasRes.status).toBe(200);
+      const jsonAliasBody = (await jsonAliasRes.json()) as { version: number; resources: string[] };
+      expect(jsonAliasBody.version).toBe(1);
+      expect(jsonAliasBody.resources).toEqual(body.resources);
+
+      const getA2aRes = await app.request("/a2a", undefined, testEnv);
+      expect(getA2aRes.status).toBe(200);
+      const getA2aBody = (await getA2aRes.json()) as { name?: string };
+      expect(getA2aBody.name).toBe("TaxRail");
     });
 
     it("returns HTTP 402 ($0.01 USDC) on unpaid /api/v1/x402/pre-trade-check and computes HIFO/borrow recommendation when paid", async () => {
